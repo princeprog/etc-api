@@ -29,6 +29,11 @@ describe('DatabaseModule', () => {
   beforeEach(() => {
     destroy.mockReset();
     selectFrom.mockReset();
+    process.env.DB_HOST = 'localhost';
+    process.env.DB_PORT = '5432';
+    process.env.DB_USER = 'postgres';
+    process.env.DB_PASSWORD = 'postgres';
+    process.env.DB_NAME = 'etc-db';
   });
 
   it('provides the DATABASE injection token', async () => {

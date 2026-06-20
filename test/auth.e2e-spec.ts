@@ -14,6 +14,7 @@ import { hashPassword } from '../src/common/utils/auth.utils';
 
 const ADMIN_EMAIL = 'admin.e2e@example.com';
 const STAFF_EMAIL = 'staff.e2e@example.com';
+const NEW_STAFF_EMAIL = 'new.staff@example.com';
 const PASSWORD = 'Password123!';
 
 describe('Auth flows (e2e)', () => {
@@ -34,7 +35,7 @@ describe('Auth flows (e2e)', () => {
 
   beforeEach(async () => {
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL]).execute();
+    await db.deleteFrom('auth.users').where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL]).execute();
 
     const [adminPasswordHash, staffPasswordHash] = await Promise.all([
       hashPassword(PASSWORD),
@@ -62,7 +63,7 @@ describe('Auth flows (e2e)', () => {
 
   afterAll(async () => {
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL]).execute();
+    await db.deleteFrom('auth.users').where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL]).execute();
     await app.close();
   });
 
@@ -188,6 +189,72 @@ describe('Auth flows (e2e)', () => {
       .get('/auth/admin-check')
       .set('Cookie', [adminAccessCookie, adminRefreshCookie])
       .expect(200);
+  });
+
+  it('allows admins to create users with roles and rejects staff access', async () => {
+    const staffLoginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: STAFF_EMAIL,
+        password: PASSWORD,
+      })
+      .expect(201);
+
+    const staffAccessCookie = extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_access_token');
+    const staffRefreshCookie = extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_refresh_token');
+
+    await request(app.getHttpServer())
+      .post('/auth/users')
+      .set('Cookie', [staffAccessCookie, staffRefreshCookie])
+      .send({
+        email: NEW_STAFF_EMAIL,
+        password: PASSWORD,
+        fullName: 'New Staff User',
+        role: 'staff',
+      })
+      .expect(403);
+
+    const adminLoginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: ADMIN_EMAIL,
+        password: PASSWORD,
+      })
+      .expect(201);
+
+    const adminAccessCookie = extractCookie(adminLoginResponse.headers['set-cookie'], 'etc_access_token');
+    const adminRefreshCookie = extractCookie(adminLoginResponse.headers['set-cookie'], 'etc_refresh_token');
+
+    const createResponse = await request(app.getHttpServer())
+      .post('/auth/users')
+      .set('Cookie', [adminAccessCookie, adminRefreshCookie])
+      .send({
+        email: NEW_STAFF_EMAIL,
+        password: PASSWORD,
+        fullName: 'New Staff User',
+        role: 'staff',
+      })
+      .expect(201);
+
+    expect(createResponse.body).toEqual({
+      user: {
+        id: expect.any(String),
+        email: NEW_STAFF_EMAIL,
+        fullName: 'New Staff User',
+        role: 'staff',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post('/auth/users')
+      .set('Cookie', [adminAccessCookie, adminRefreshCookie])
+      .send({
+        email: NEW_STAFF_EMAIL,
+        password: PASSWORD,
+        fullName: 'Duplicate User',
+        role: 'staff',
+      })
+      .expect(400);
   });
 });
 

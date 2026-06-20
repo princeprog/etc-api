@@ -16,6 +16,7 @@ import { LoginDto } from './dto/login.dto';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
+import { CreateUserDto } from './dto/create-user.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -59,5 +60,12 @@ export class AuthController {
       user,
       access: 'granted',
     };
+  }
+
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles('admin')
+  @Post('users')
+  createUser(@Body() createUserDto: CreateUserDto) {
+    return this.authService.createUser(createUserDto);
   }
 }

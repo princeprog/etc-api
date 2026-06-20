@@ -14,7 +14,8 @@ import type { User } from '../../database/schema';
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '../../common/constants/auth.constants';
 import type { LoginDto } from './dto/login.dto';
 import type { AuthTokenPayload, CurrentUser, RefreshTokenPayload } from '../../common/types/auth.types';
-import { durationToMs, generateTokenId, hashToken, parseRole, verifyPassword } from '../../common/utils/auth.utils';
+import { durationToMs, generateTokenId, hashPassword, hashToken, parseRole, verifyPassword } from '../../common/utils/auth.utils';
+import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class AuthService {
@@ -146,6 +147,49 @@ export class AuthService {
 
     this.clearAuthCookies(response);
     return { success: true };
+  }
+
+  async createUser(createUserDto: CreateUserDto): Promise<{ user: CurrentUser }> {
+    const email = createUserDto.email?.trim().toLowerCase();
+    const password = createUserDto.password;
+    const fullName = createUserDto.fullName?.trim();
+
+    if (!email) {
+      throw new BadRequestException('email is required');
+    }
+
+    if (!password) {
+      throw new BadRequestException('password is required');
+    }
+
+    if (!fullName) {
+      throw new BadRequestException('fullName is required');
+    }
+
+    const role = parseRole(createUserDto.role);
+
+    const existingUser = await this.db
+      .selectFrom('auth.users')
+      .select(['id'])
+      .where('email', '=', email)
+      .executeTakeFirst();
+
+    if (existingUser) {
+      throw new BadRequestException(`User with email ${email} already exists`);
+    }
+
+    const insertedUser = await this.db
+      .insertInto('auth.users')
+      .values({
+        email,
+        password_hash: await hashPassword(password),
+        full_name: fullName,
+        role,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return { user: this.toCurrentUser(this.normalizeUser(insertedUser)) };
   }
 
   private async issueSessionTokens(user: User, response: Response): Promise<void> {
