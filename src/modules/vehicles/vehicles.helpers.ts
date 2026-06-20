@@ -39,6 +39,10 @@ export function parseVehicleStatus(value: string | undefined, fallback: VehicleS
 }
 
 export function validateVehicleAvailability(model: VehicleWriteModel): void {
+  if (model.status === 'Sold') {
+    throw new BadRequestException('Vehicles can only move to Sold through the sales finalization workflow');
+  }
+
   if (model.status !== 'Available') {
     return;
   }

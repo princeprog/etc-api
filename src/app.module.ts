@@ -7,9 +7,11 @@ import { BuyerLeadsModule } from './modules/buyer_leads/buyer_leads.module';
 import { SellerLeadsModule } from './modules/seller-leads/seller-leads.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
+import { SalesModule } from './modules/sales/sales.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, BuyerLeadsModule, SellerLeadsModule, VehiclesModule, FollowUpsModule],
+  imports: [DatabaseModule, AuthModule, BuyerLeadsModule, SellerLeadsModule, VehiclesModule, FollowUpsModule, SalesModule, DashboardModule],
   controllers: [AppController],
   providers: [AppService],
 })
