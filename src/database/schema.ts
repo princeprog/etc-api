@@ -36,6 +36,18 @@ export interface UsersTable {
   updated_at: Generated<Date>;
 }
 
+export interface SessionsTable {
+  id: Generated<string>;
+  user_id: string;
+  refresh_token_hash: string;
+  current_access_token_jti: string;
+  expires_at: Date;
+  last_rotated_at: Generated<Date>;
+  revoked_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface VehiclesTable {
   id: Generated<string>;
   stock_number: string;
@@ -169,6 +181,7 @@ export interface CommissionsTable {
 
 export interface DB {
   'auth.users': UsersTable;
+  'auth.sessions': SessionsTable;
   'inventory.vehicles': VehiclesTable;
   'inventory.vehicle_photos': VehiclePhotosTable;
   'crm.seller_leads': SellerLeadsTable;
@@ -183,6 +196,10 @@ export interface DB {
 export type User = Selectable<UsersTable>;
 export type NewUser = Insertable<UsersTable>;
 export type UserUpdate = Updateable<UsersTable>;
+
+export type Session = Selectable<SessionsTable>;
+export type NewSession = Insertable<SessionsTable>;
+export type SessionUpdate = Updateable<SessionsTable>;
 
 export type Vehicle = Selectable<VehiclesTable>;
 export type NewVehicle = Insertable<VehiclesTable>;

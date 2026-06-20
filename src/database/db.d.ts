@@ -13,6 +13,18 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AuthSessions {
+  created_at: Generated<Timestamp>;
+  current_access_token_jti: string;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  last_rotated_at: Generated<Timestamp>;
+  refresh_token_hash: string;
+  revoked_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface AuthUsers {
   active: Generated<boolean>;
   created_at: Generated<Timestamp>;
@@ -156,6 +168,7 @@ export interface SalesSales {
 }
 
 export interface DB {
+  "auth.sessions": AuthSessions;
   "auth.users": AuthUsers;
   "crm.buyer_leads": CrmBuyerLeads;
   "crm.follow_ups": CrmFollowUps;

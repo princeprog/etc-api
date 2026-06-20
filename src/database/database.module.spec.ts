@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { AppModule } from '../app.module';
 import { DATABASE } from './database.constants';
+import { DatabaseModule } from './database.module';
 
 const destroy = jest.fn();
 const selectFrom = jest.fn();
@@ -33,7 +33,7 @@ describe('DatabaseModule', () => {
 
   it('provides the DATABASE injection token', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [DatabaseModule],
     }).compile();
 
     const db = moduleRef.get(DATABASE);
