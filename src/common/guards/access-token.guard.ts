@@ -8,11 +8,11 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import type { Kysely } from 'kysely';
 
-import { DATABASE } from '../../../database/database.constants';
-import type { DB } from '../../../database/db';
-import { ACCESS_TOKEN_COOKIE } from '../auth.constants';
-import type { AuthenticatedRequest, AuthTokenPayload, CurrentUser } from '../auth.types';
-import { parseRole } from '../auth.utils';
+import { DATABASE } from '../../database/database.constants';
+import type { DB } from '../../database/db';
+import { ACCESS_TOKEN_COOKIE } from '../constants/auth.constants';
+import type { AuthenticatedRequest, AuthTokenPayload, CurrentUser } from '../types/auth.types';
+import { parseRole } from '../utils/auth.utils';
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {

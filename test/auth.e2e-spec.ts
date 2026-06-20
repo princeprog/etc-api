@@ -10,7 +10,7 @@ import type { Kysely } from 'kysely';
 import { AppModule } from '../src/app.module';
 import { DATABASE } from '../src/database/database.constants';
 import type { DB } from '../src/database/db';
-import { hashPassword } from '../src/modules/auth/auth.utils';
+import { hashPassword } from '../src/common/utils/auth.utils';
 
 const ADMIN_EMAIL = 'admin.e2e@example.com';
 const STAFF_EMAIL = 'staff.e2e@example.com';

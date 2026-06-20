@@ -2,8 +2,8 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { AccessTokenGuard } from './guards/access-token.guard';
-import { RolesGuard } from './guards/roles.guard';
+import { AccessTokenGuard } from '../../common/guards/access-token.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
 
 @Module({
   imports: [JwtModule.register({})],

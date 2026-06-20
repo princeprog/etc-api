@@ -11,10 +11,10 @@ import type { Kysely } from 'kysely';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { User } from '../../database/schema';
-import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from './auth.constants';
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '../../common/constants/auth.constants';
 import type { LoginDto } from './dto/login.dto';
-import type { AuthTokenPayload, CurrentUser, RefreshTokenPayload } from './auth.types';
-import { durationToMs, generateTokenId, hashToken, parseRole, verifyPassword } from './auth.utils';
+import type { AuthTokenPayload, CurrentUser, RefreshTokenPayload } from '../../common/types/auth.types';
+import { durationToMs, generateTokenId, hashToken, parseRole, verifyPassword } from '../../common/utils/auth.utils';
 
 @Injectable()
 export class AuthService {

@@ -9,13 +9,13 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { CurrentUser } from './decorators/current-user.decorator';
-import { Roles } from './decorators/roles.decorator';
-import { REFRESH_TOKEN_COOKIE } from './auth.constants';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { REFRESH_TOKEN_COOKIE } from '../../common/constants/auth.constants';
 import { LoginDto } from './dto/login.dto';
-import { AccessTokenGuard } from './guards/access-token.guard';
-import { RolesGuard } from './guards/roles.guard';
-import type { CurrentUser as CurrentUserType } from './auth.types';
+import { AccessTokenGuard } from '../../common/guards/access-token.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 
 @Controller('auth')
 export class AuthController {
