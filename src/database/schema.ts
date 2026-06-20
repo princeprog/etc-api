@@ -168,16 +168,16 @@ export interface CommissionsTable {
 }
 
 export interface DB {
-  users: UsersTable;
-  vehicles: VehiclesTable;
-  vehicle_photos: VehiclePhotosTable;
-  seller_leads: SellerLeadsTable;
-  buyer_leads: BuyerLeadsTable;
-  lead_vehicle_links: LeadVehicleLinksTable;
-  lead_activities: LeadActivitiesTable;
-  follow_ups: FollowUpsTable;
-  sales: SalesTable;
-  commissions: CommissionsTable;
+  'auth.users': UsersTable;
+  'inventory.vehicles': VehiclesTable;
+  'inventory.vehicle_photos': VehiclePhotosTable;
+  'crm.seller_leads': SellerLeadsTable;
+  'crm.buyer_leads': BuyerLeadsTable;
+  'crm.lead_vehicle_links': LeadVehicleLinksTable;
+  'crm.lead_activities': LeadActivitiesTable;
+  'crm.follow_ups': FollowUpsTable;
+  'sales.sales': SalesTable;
+  'sales.commissions': CommissionsTable;
 }
 
 export type User = Selectable<UsersTable>;

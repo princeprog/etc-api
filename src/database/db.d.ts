@@ -13,7 +13,18 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
-export interface BuyerLeads {
+export interface AuthUsers {
+  active: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  email: string;
+  full_name: string;
+  id: Generated<string>;
+  password_hash: string;
+  role: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CrmBuyerLeads {
   assignee_user_id: string | null;
   buyer_name: string;
   closing_note: string | null;
@@ -30,19 +41,7 @@ export interface BuyerLeads {
   updated_at: Generated<Timestamp>;
 }
 
-export interface Commissions {
-  agent_name: string | null;
-  created_at: Generated<Timestamp>;
-  default_amount: Numeric | null;
-  final_amount: Numeric;
-  id: Generated<string>;
-  override_amount: Numeric | null;
-  override_reason: string | null;
-  sale_id: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface FollowUps {
+export interface CrmFollowUps {
   assignee_user_id: string;
   buyer_lead_id: string | null;
   completed_at: Timestamp | null;
@@ -57,7 +56,7 @@ export interface FollowUps {
   updated_at: Generated<Timestamp>;
 }
 
-export interface LeadActivities {
+export interface CrmLeadActivities {
   activity_type: string;
   buyer_lead_id: string | null;
   created_at: Generated<Timestamp>;
@@ -68,29 +67,14 @@ export interface LeadActivities {
   seller_lead_id: string | null;
 }
 
-export interface LeadVehicleLinks {
+export interface CrmLeadVehicleLinks {
   buyer_lead_id: string;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   vehicle_id: string;
 }
 
-export interface Sales {
-  agent_name: string | null;
-  buyer_lead_id: string;
-  commission_locked: Generated<boolean>;
-  commission_method: string | null;
-  created_at: Generated<Timestamp>;
-  created_by_user_id: string;
-  final_sale_amount: Numeric;
-  gross_profit_amount: Numeric | null;
-  id: Generated<string>;
-  sale_date: Timestamp;
-  updated_at: Generated<Timestamp>;
-  vehicle_id: string;
-}
-
-export interface SellerLeads {
+export interface CrmSellerLeads {
   asking_price: Numeric | null;
   assignee_user_id: string | null;
   closing_note: string | null;
@@ -112,18 +96,7 @@ export interface SellerLeads {
   vehicle_year: number | null;
 }
 
-export interface Users {
-  active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  email: string;
-  full_name: string;
-  id: Generated<string>;
-  password_hash: string;
-  role: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface VehiclePhotos {
+export interface InventoryVehiclePhotos {
   created_at: Generated<Timestamp>;
   file_url: string;
   id: Generated<string>;
@@ -131,7 +104,7 @@ export interface VehiclePhotos {
   vehicle_id: string;
 }
 
-export interface Vehicles {
+export interface InventoryVehicles {
   acquisition_source: string | null;
   brand: string;
   color: string | null;
@@ -155,15 +128,42 @@ export interface Vehicles {
   year: number;
 }
 
+export interface SalesCommissions {
+  agent_name: string | null;
+  created_at: Generated<Timestamp>;
+  default_amount: Numeric | null;
+  final_amount: Numeric;
+  id: Generated<string>;
+  override_amount: Numeric | null;
+  override_reason: string | null;
+  sale_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface SalesSales {
+  agent_name: string | null;
+  buyer_lead_id: string;
+  commission_locked: Generated<boolean>;
+  commission_method: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  final_sale_amount: Numeric;
+  gross_profit_amount: Numeric | null;
+  id: Generated<string>;
+  sale_date: Timestamp;
+  updated_at: Generated<Timestamp>;
+  vehicle_id: string;
+}
+
 export interface DB {
-  buyer_leads: BuyerLeads;
-  commissions: Commissions;
-  follow_ups: FollowUps;
-  lead_activities: LeadActivities;
-  lead_vehicle_links: LeadVehicleLinks;
-  sales: Sales;
-  seller_leads: SellerLeads;
-  users: Users;
-  vehicle_photos: VehiclePhotos;
-  vehicles: Vehicles;
+  "auth.users": AuthUsers;
+  "crm.buyer_leads": CrmBuyerLeads;
+  "crm.follow_ups": CrmFollowUps;
+  "crm.lead_activities": CrmLeadActivities;
+  "crm.lead_vehicle_links": CrmLeadVehicleLinks;
+  "crm.seller_leads": CrmSellerLeads;
+  "inventory.vehicle_photos": InventoryVehiclePhotos;
+  "inventory.vehicles": InventoryVehicles;
+  "sales.commissions": SalesCommissions;
+  "sales.sales": SalesSales;
 }
