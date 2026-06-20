@@ -1,0 +1,111 @@
+import { BadRequestException } from '@nestjs/common';
+
+import type { VehicleStatus } from '../../database/schema';
+import type { VehiclePhotoInput, VehicleResponse, VehicleWriteModel } from './vehicles.types';
+
+const VEHICLE_STATUSES: VehicleStatus[] = [
+  'Incoming',
+  'Reconditioning',
+  'Available',
+  'Reserved',
+  'Sold',
+];
+
+export function normalizeVehiclePhotos(photos: VehiclePhotoInput[] | undefined): VehiclePhotoInput[] {
+  return (photos ?? []).map((photo, index) => {
+    const fileUrl = photo.fileUrl?.trim();
+
+    if (!fileUrl) {
+      throw new BadRequestException('Vehicle photo fileUrl is required');
+    }
+
+    return {
+      fileUrl,
+      sortOrder: photo.sortOrder ?? index,
+    };
+  });
+}
+
+export function parseVehicleStatus(value: string | undefined, fallback: VehicleStatus): VehicleStatus {
+  if (!value) {
+    return fallback;
+  }
+
+  if (!VEHICLE_STATUSES.includes(value as VehicleStatus)) {
+    throw new BadRequestException(`Unsupported vehicle status: ${value}`);
+  }
+
+  return value as VehicleStatus;
+}
+
+export function validateVehicleAvailability(model: VehicleWriteModel): void {
+  if (model.status !== 'Available') {
+    return;
+  }
+
+  if (!model.targetSellingPrice) {
+    throw new BadRequestException(
+      'targetSellingPrice is required before moving a vehicle to Available',
+    );
+  }
+
+  if (!model.minimumAcceptablePrice) {
+    throw new BadRequestException(
+      'minimumAcceptablePrice is required before moving a vehicle to Available',
+    );
+  }
+
+  if (model.photos.length === 0) {
+    throw new BadRequestException('At least one photo is required before moving a vehicle to Available');
+  }
+}
+
+export function mapVehicleResponse(vehicle: {
+  id: string;
+  stock_number: string;
+  brand: string;
+  model: string;
+  year: number;
+  variant: string | null;
+  mileage: number | null;
+  transmission: string | null;
+  fuel_type: string | null;
+  color: string | null;
+  region: string | null;
+  features: string | null;
+  remarks: string | null;
+  purchase_price: string | null;
+  target_selling_price: string | null;
+  minimum_acceptable_price: string | null;
+  acquisition_source: string | null;
+  seller_lead_id: string | null;
+  status: VehicleStatus;
+  created_at: Date;
+  updated_at: Date;
+  photos: VehiclePhotoInput[];
+}): VehicleResponse {
+  return {
+    id: vehicle.id,
+    stockNumber: vehicle.stock_number,
+    brand: vehicle.brand,
+    model: vehicle.model,
+    year: vehicle.year,
+    variant: vehicle.variant,
+    mileage: vehicle.mileage,
+    transmission: vehicle.transmission,
+    fuelType: vehicle.fuel_type,
+    color: vehicle.color,
+    region: vehicle.region,
+    features: vehicle.features,
+    remarks: vehicle.remarks,
+    purchasePrice: vehicle.purchase_price,
+    targetSellingPrice: vehicle.target_selling_price,
+    minimumAcceptablePrice: vehicle.minimum_acceptable_price,
+    acquisitionSource: vehicle.acquisition_source,
+    sellerLeadId: vehicle.seller_lead_id,
+    status: vehicle.status,
+    photos: vehicle.photos,
+    createdAt: vehicle.created_at,
+    updatedAt: vehicle.updated_at,
+  };
+}
