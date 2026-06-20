@@ -3,4 +3,167 @@
  * Please do not edit it manually.
  */
 
-export interface DB {}
+import type { ColumnType } from "kysely";
+
+export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S, I | undefined, U>
+  : ColumnType<T, T | undefined, T>;
+
+export type Numeric = ColumnType<string, number | string, number | string>;
+
+export type Timestamp = ColumnType<Date, Date | string, Date | string>;
+
+export interface BuyerLeads {
+  assignee_user_id: string | null;
+  buyer_name: string;
+  closing_note: string | null;
+  contact_number: string;
+  created_at: Generated<Timestamp>;
+  desired_budget: Numeric | null;
+  email: string | null;
+  facebook_name: string | null;
+  id: Generated<string>;
+  inquiry_source: string | null;
+  latest_activity_at: Timestamp | null;
+  notes: string | null;
+  status: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface Commissions {
+  agent_name: string | null;
+  created_at: Generated<Timestamp>;
+  default_amount: Numeric | null;
+  final_amount: Numeric;
+  id: Generated<string>;
+  override_amount: Numeric | null;
+  override_reason: string | null;
+  sale_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface FollowUps {
+  assignee_user_id: string;
+  buyer_lead_id: string | null;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  due_at: Timestamp;
+  id: Generated<string>;
+  lead_type: string;
+  note: string;
+  outcome_note: string | null;
+  seller_lead_id: string | null;
+  status: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface LeadActivities {
+  activity_type: string;
+  buyer_lead_id: string | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  lead_type: string;
+  note: string;
+  performed_by_user_id: string | null;
+  seller_lead_id: string | null;
+}
+
+export interface LeadVehicleLinks {
+  buyer_lead_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  vehicle_id: string;
+}
+
+export interface Sales {
+  agent_name: string | null;
+  buyer_lead_id: string;
+  commission_locked: Generated<boolean>;
+  commission_method: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  final_sale_amount: Numeric;
+  gross_profit_amount: Numeric | null;
+  id: Generated<string>;
+  sale_date: Timestamp;
+  updated_at: Generated<Timestamp>;
+  vehicle_id: string;
+}
+
+export interface SellerLeads {
+  asking_price: Numeric | null;
+  assignee_user_id: string | null;
+  closing_note: string | null;
+  contact_number: string;
+  created_at: Generated<Timestamp>;
+  email: string | null;
+  facebook_name: string | null;
+  id: Generated<string>;
+  inquiry_source: string | null;
+  latest_activity_at: Timestamp | null;
+  notes: string | null;
+  region: string | null;
+  seller_name: string;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  vehicle_brand: string;
+  vehicle_model: string;
+  vehicle_variant: string | null;
+  vehicle_year: number | null;
+}
+
+export interface Users {
+  active: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  email: string;
+  full_name: string;
+  id: Generated<string>;
+  password_hash: string;
+  role: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface VehiclePhotos {
+  created_at: Generated<Timestamp>;
+  file_url: string;
+  id: Generated<string>;
+  sort_order: Generated<number>;
+  vehicle_id: string;
+}
+
+export interface Vehicles {
+  acquisition_source: string | null;
+  brand: string;
+  color: string | null;
+  created_at: Generated<Timestamp>;
+  features: string | null;
+  fuel_type: string | null;
+  id: Generated<string>;
+  mileage: number | null;
+  minimum_acceptable_price: Numeric | null;
+  model: string;
+  purchase_price: Numeric | null;
+  region: string | null;
+  remarks: string | null;
+  seller_lead_id: string | null;
+  status: string;
+  stock_number: string;
+  target_selling_price: Numeric | null;
+  transmission: string | null;
+  updated_at: Generated<Timestamp>;
+  variant: string | null;
+  year: number;
+}
+
+export interface DB {
+  buyer_leads: BuyerLeads;
+  commissions: Commissions;
+  follow_ups: FollowUps;
+  lead_activities: LeadActivities;
+  lead_vehicle_links: LeadVehicleLinks;
+  sales: Sales;
+  seller_leads: SellerLeads;
+  users: Users;
+  vehicle_photos: VehiclePhotos;
+  vehicles: Vehicles;
+}
