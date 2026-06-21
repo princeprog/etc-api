@@ -11,6 +11,10 @@ const VEHICLE_STATUSES: VehicleStatus[] = [
   'Sold',
 ];
 
+export function formatVehicleStockNumber(year: number, sequence: number) {
+  return `ETC-${year}-${String(sequence).padStart(3, '0')}`;
+}
+
 export function normalizeVehiclePhotos(photos: VehiclePhotoInput[] | undefined): VehiclePhotoInput[] {
   return (photos ?? []).map((photo, index) => {
     const fileUrl = photo.fileUrl?.trim();

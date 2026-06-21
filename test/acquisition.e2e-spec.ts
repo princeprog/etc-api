@@ -33,6 +33,8 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
   });
 
   beforeEach(async () => {
+    await db.deleteFrom('sales.commissions').execute();
+    await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
@@ -64,6 +66,8 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
   });
 
   afterAll(async () => {
+    await db.deleteFrom('sales.commissions').execute();
+    await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
@@ -128,7 +132,6 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
       .post(`/seller-leads/${leadResponse.body.sellerLead.id}/convert`)
       .set('Cookie', authCookies)
       .send({
-        stockNumber: 'STK-1001',
         year: 2020,
         targetSellingPrice: '620000.00',
         minimumAcceptablePrice: '590000.00',
@@ -146,7 +149,7 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
       vehicle: expect.objectContaining({
         id: expect.any(String),
         sellerLeadId: leadResponse.body.sellerLead.id,
-        stockNumber: 'STK-1001',
+        stockNumber: expect.stringMatching(/^ETC-\d{4}-\d{3}$/),
         status: 'Incoming',
       }),
     });
@@ -155,7 +158,6 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
       .post(`/seller-leads/${leadResponse.body.sellerLead.id}/convert`)
       .set('Cookie', authCookies)
       .send({
-        stockNumber: 'STK-1002',
         year: 2020,
       })
       .expect(400);
@@ -166,7 +168,6 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
       .post('/vehicles')
       .set('Cookie', authCookies)
       .send({
-        stockNumber: 'STK-2001',
         brand: 'Honda',
         model: 'City',
         year: 2021,
@@ -188,7 +189,6 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
       .post('/vehicles')
       .set('Cookie', authCookies)
       .send({
-        stockNumber: 'STK-2002',
         brand: 'Mitsubishi',
         model: 'Montero',
         year: 2022,
@@ -213,6 +213,81 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
         status: 'Available',
       }),
     });
+  });
+
+  it('generates sequential yearly stock numbers for direct vehicle creation', async () => {
+    const firstResponse = await request(app.getHttpServer())
+      .post('/vehicles')
+      .set('Cookie', authCookies)
+      .send({
+        brand: 'Toyota',
+        model: 'Vios',
+        year: 2020,
+        status: 'Incoming',
+      })
+      .expect(201);
+
+    const secondResponse = await request(app.getHttpServer())
+      .post('/vehicles')
+      .set('Cookie', authCookies)
+      .send({
+        brand: 'Honda',
+        model: 'Civic',
+        year: 2021,
+        status: 'Incoming',
+      })
+      .expect(201);
+
+    expect(firstResponse.body.vehicle.stockNumber).toMatch(/^ETC-\d{4}-001$/);
+    expect(secondResponse.body.vehicle.stockNumber).toMatch(/^ETC-\d{4}-002$/);
+  });
+
+  it('filters vehicles by status when requested', async () => {
+    await request(app.getHttpServer())
+      .post('/vehicles')
+      .set('Cookie', authCookies)
+      .send({
+        brand: 'Toyota',
+        model: 'Raize',
+        year: 2023,
+        status: 'Available',
+        targetSellingPrice: '980000.00',
+        minimumAcceptablePrice: '940000.00',
+        photos: [{ fileUrl: 'https://example.com/raize.jpg', sortOrder: 0 }],
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/vehicles')
+      .set('Cookie', authCookies)
+      .send({
+        brand: 'Ford',
+        model: 'Everest',
+        year: 2022,
+        status: 'Incoming',
+      })
+      .expect(201);
+
+    const availableResponse = await request(app.getHttpServer())
+      .get('/vehicles?status=Available')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(availableResponse.body.vehicles).toHaveLength(1);
+    expect(availableResponse.body.vehicles[0]).toEqual(
+      expect.objectContaining({
+        status: 'Available',
+        brand: 'Toyota',
+        model: 'Raize',
+      }),
+    );
+
+    const unfilteredResponse = await request(app.getHttpServer())
+      .get('/vehicles')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(unfilteredResponse.body.vehicles).toHaveLength(2);
   });
 });
 

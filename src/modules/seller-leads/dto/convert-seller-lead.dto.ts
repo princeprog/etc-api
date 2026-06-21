@@ -2,7 +2,6 @@ import type { VehicleStatus } from '../../../database/schema';
 import { VehiclePhotoDto } from '../../vehicles/dto/vehicle-photo.dto';
 
 export class ConvertSellerLeadDto {
-  stockNumber!: string;
   year?: number;
   variant?: string | null;
   mileage?: number | null;

@@ -5,14 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Kysely, Transaction } from 'kysely';
+import { sql } from 'kysely';
 
 import { LocalFileStorageService } from '../../common/storage/local-file-storage.service';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { VehicleStatus } from '../../database/schema';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
+import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import {
+  formatVehicleStockNumber,
   mapVehicleResponse,
   normalizeVehiclePhotos,
   parseVehicleStatus,
@@ -29,7 +32,6 @@ export class VehiclesService {
 
   async create(createVehicleDto: CreateVehicleDto) {
     const model = this.buildVehicleCreateModel({
-      stockNumber: createVehicleDto.stockNumber,
       brand: createVehicleDto.brand,
       model: createVehicleDto.model,
       year: createVehicleDto.year,
@@ -51,10 +53,11 @@ export class VehiclesService {
     });
 
     const vehicle = await this.db.transaction().execute(async (trx) => {
+      const stockNumber = await this.allocateStockNumber(trx);
       const insertedVehicle = await trx
         .insertInto('inventory.vehicles')
         .values({
-          stock_number: model.stockNumber,
+          stock_number: stockNumber,
           brand: model.brand,
           model: model.model,
           year: model.year,
@@ -83,12 +86,14 @@ export class VehiclesService {
     return { vehicle };
   }
 
-  async findAll() {
-    const vehicleIds = await this.db
-      .selectFrom('inventory.vehicles')
-      .select(['id'])
-      .orderBy('created_at desc')
-      .execute();
+  async findAll(query?: ListVehiclesQueryDto) {
+    let vehiclesQuery = this.db.selectFrom('inventory.vehicles').select(['id']);
+
+    if (query?.status) {
+      vehiclesQuery = vehiclesQuery.where('status', '=', parseVehicleStatus(query.status, 'Incoming'));
+    }
+
+    const vehicleIds = await vehiclesQuery.orderBy('created_at', 'desc').execute();
 
     const vehicles = await Promise.all(vehicleIds.map((vehicle) => this.getVehicleOrThrow(vehicle.id)));
     return { vehicles };
@@ -178,7 +183,7 @@ export class VehiclesService {
   }
 
   buildVehicleCreateModel(input: {
-    stockNumber: string;
+    stockNumber?: string;
     brand: string;
     model: string;
     year: number | undefined;
@@ -202,10 +207,6 @@ export class VehiclesService {
     const brand = input.brand?.trim();
     const model = input.model?.trim();
 
-    if (!stockNumber) {
-      throw new BadRequestException('stockNumber is required');
-    }
-
     if (!brand) {
       throw new BadRequestException('brand is required');
     }
@@ -219,7 +220,7 @@ export class VehiclesService {
     }
 
     const normalized: VehicleWriteModel = {
-      stockNumber,
+      stockNumber: stockNumber ?? '',
       brand,
       model,
       year: Number(input.year),
@@ -262,6 +263,27 @@ export class VehiclesService {
       status: parseVehicleStatus(vehicle.status, 'Incoming'),
       photos,
     });
+  }
+
+  async allocateStockNumber(trx: Transaction<DB>, now = new Date()) {
+    const stockYear = now.getUTCFullYear();
+
+    await sql`select pg_advisory_xact_lock(${stockYear})`.execute(trx);
+
+    const latestVehicleForYear = await trx
+      .selectFrom('inventory.vehicles')
+      .select(['stock_number'])
+      .where(sql<boolean>`stock_number ~ '^ETC-[0-9]{4}-[0-9]+$'`)
+      .where(sql<boolean>`split_part(stock_number, '-', 2)::integer = ${stockYear}`)
+      .orderBy(sql<number>`split_part(stock_number, '-', 3)::integer`, 'desc')
+      .executeTakeFirst();
+
+    if (!latestVehicleForYear?.stock_number) {
+      return formatVehicleStockNumber(stockYear, 1);
+    }
+
+    const latestSequence = Number(latestVehicleForYear.stock_number.split('-').at(-1) ?? '0');
+    return formatVehicleStockNumber(stockYear, latestSequence + 1);
   }
 
   private async getVehiclePhotos(id: string, executor?: Kysely<DB> | Transaction<DB>) {

@@ -165,7 +165,6 @@ export class SellerLeadsService {
       }
 
       const vehicleModel = this.vehiclesService.buildVehicleCreateModel({
-        stockNumber: convertSellerLeadDto.stockNumber,
         brand: sellerLead.vehicle_brand,
         model: sellerLead.vehicle_model,
         year: convertSellerLeadDto.year ?? sellerLead.vehicle_year ?? undefined,
@@ -185,11 +184,12 @@ export class SellerLeadsService {
         status: convertSellerLeadDto.status ?? 'Incoming',
         photos: convertSellerLeadDto.photos,
       });
+      const stockNumber = await this.vehiclesService.allocateStockNumber(trx);
 
       const insertedVehicle = await trx
         .insertInto('inventory.vehicles')
         .values({
-          stock_number: vehicleModel.stockNumber,
+          stock_number: stockNumber,
           brand: vehicleModel.brand,
           model: vehicleModel.model,
           year: vehicleModel.year,

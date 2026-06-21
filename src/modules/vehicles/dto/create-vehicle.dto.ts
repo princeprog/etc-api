@@ -2,7 +2,6 @@ import type { VehicleStatus } from '../../../database/schema';
 import { VehiclePhotoDto } from './vehicle-photo.dto';
 
 export class CreateVehicleDto {
-  stockNumber!: string;
   brand!: string;
   model!: string;
   year!: number;
