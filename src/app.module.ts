@@ -9,9 +9,10 @@ import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, BuyerLeadsModule, SellerLeadsModule, VehiclesModule, FollowUpsModule, SalesModule, DashboardModule],
+  imports: [DatabaseModule, AuthModule, BuyerLeadsModule, SellerLeadsModule, VehiclesModule, FollowUpsModule, SalesModule, DashboardModule, UploadsModule],
   controllers: [AppController],
   providers: [AppService],
 })

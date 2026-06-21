@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Kysely, Transaction } from 'kysely';
 
+import { LocalFileStorageService } from '../../common/storage/local-file-storage.service';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { VehicleStatus } from '../../database/schema';
@@ -21,7 +22,10 @@ import type { VehiclePhotoInput, VehicleWriteModel } from './vehicles.types';
 
 @Injectable()
 export class VehiclesService {
-  constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Kysely<DB>,
+    private readonly localFileStorageService: LocalFileStorageService,
+  ) {}
 
   async create(createVehicleDto: CreateVehicleDto) {
     const model = this.buildVehicleCreateModel({
@@ -130,6 +134,7 @@ export class VehiclesService {
       status: updateVehicleDto.status ?? parseVehicleStatus(existingVehicle.status, 'Incoming'),
       photos: updateVehicleDto.photos ?? existingPhotos,
     });
+    const removedPhotoPaths = this.getRemovedPhotoPaths(existingPhotos, model.photos);
 
     const vehicle = await this.db.transaction().execute(async (trx) => {
       await trx
@@ -164,6 +169,10 @@ export class VehiclesService {
 
       return this.getVehicleOrThrow(id, trx);
     });
+
+    if (removedPhotoPaths.length > 0) {
+      await this.localFileStorageService.deleteFiles(removedPhotoPaths);
+    }
 
     return { vehicle };
   }
@@ -287,5 +296,16 @@ export class VehiclesService {
         })),
       )
       .execute();
+  }
+
+  private getRemovedPhotoPaths(
+    existingPhotos: VehiclePhotoInput[],
+    nextPhotos: VehiclePhotoInput[],
+  ) {
+    const nextPhotoPaths = new Set(nextPhotos.map((photo) => photo.fileUrl));
+
+    return existingPhotos
+      .map((photo) => photo.fileUrl)
+      .filter((fileUrl) => !nextPhotoPaths.has(fileUrl));
   }
 }

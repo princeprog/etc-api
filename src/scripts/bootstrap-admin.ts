@@ -3,8 +3,8 @@ import 'dotenv/config';
 import { Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
 
-import type { DB } from '../database/db.ts';
-import { hashPassword } from '../common/utils/auth.utils.ts';
+import type { DB } from '../database/db.js';
+import { hashPassword } from '../common/utils/auth.utils.js';
 
 async function bootstrapAdmin() {
   const db = createDb();
