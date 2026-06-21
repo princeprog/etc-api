@@ -154,6 +154,7 @@ export interface FollowUpsTable {
 
 export interface SalesTable {
   id: Generated<string>;
+  sale_number: string;
   vehicle_id: string;
   buyer_lead_id: string;
   created_by_user_id: string;

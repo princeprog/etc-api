@@ -232,6 +232,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     expect(response.body).toEqual({
       sale: expect.objectContaining({
         id: expect.any(String),
+        saleNumber: expect.any(String),
         vehicleId: linkedVehicleId,
         buyerLeadId,
         agentName: 'Agent Cruz',
@@ -263,6 +264,8 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .where('id', '=', buyerLeadId)
       .executeTakeFirstOrThrow();
     expect(buyerLead.status).toBe('Won');
+
+    expect(response.body.sale.saleNumber).toBe('S-2026-001');
   });
 
   it('rejects a second sale for the same vehicle', async () => {
@@ -348,6 +351,108 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       }),
     });
   });
+
+  it('assigns yearly sale numbers and returns them from list/detail endpoints', async () => {
+    const firstSaleResponse = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: linkedVehicleId,
+        buyerLeadId,
+        saleDate: '2026-05-30T15:15:00.000Z',
+        finalSaleAmount: '1280000.00',
+        agentName: 'Agent Cruz',
+      })
+      .expect(201);
+
+    const secondPair = await seedLinkedSalePair(db, userId, {
+      stockNumber: 'SALE-2001',
+      brand: 'Ford',
+      model: 'Everest',
+      year: 2025,
+      purchasePrice: '1500000.00',
+      targetSellingPrice: '1750000.00',
+      minimumAcceptablePrice: '1680000.00',
+      buyerName: 'Buyer Second',
+      buyerContactNumber: '09170000021',
+      buyerEmail: 'buyer.second@example.com',
+    });
+
+    const secondSaleResponse = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: secondPair.vehicleId,
+        buyerLeadId: secondPair.buyerLeadId,
+        saleDate: '2026-06-01T09:30:00.000Z',
+        finalSaleAmount: '1700000.00',
+        agentName: 'Agent Cruz',
+      })
+      .expect(201);
+
+    const thirdPair = await seedLinkedSalePair(db, userId, {
+      stockNumber: 'SALE-3001',
+      brand: 'Isuzu',
+      model: 'MUX',
+      year: 2024,
+      purchasePrice: '1300000.00',
+      targetSellingPrice: '1500000.00',
+      minimumAcceptablePrice: '1450000.00',
+      buyerName: 'Buyer Third',
+      buyerContactNumber: '09170000031',
+      buyerEmail: 'buyer.third@example.com',
+    });
+
+    const thirdSaleResponse = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: thirdPair.vehicleId,
+        buyerLeadId: thirdPair.buyerLeadId,
+        saleDate: '2027-01-15T11:45:00.000Z',
+        finalSaleAmount: '1490000.00',
+        agentName: 'Agent Cruz',
+      })
+      .expect(201);
+
+    expect(firstSaleResponse.body.sale.saleNumber).toBe('S-2026-001');
+    expect(secondSaleResponse.body.sale.saleNumber).toBe('S-2026-002');
+    expect(thirdSaleResponse.body.sale.saleNumber).toBe('S-2027-001');
+
+    const listResponse = await request(app.getHttpServer())
+      .get('/sales')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(listResponse.body.sales).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: firstSaleResponse.body.sale.id,
+          saleNumber: 'S-2026-001',
+        }),
+        expect.objectContaining({
+          id: secondSaleResponse.body.sale.id,
+          saleNumber: 'S-2026-002',
+        }),
+        expect.objectContaining({
+          id: thirdSaleResponse.body.sale.id,
+          saleNumber: 'S-2027-001',
+        }),
+      ]),
+    );
+
+    const detailResponse = await request(app.getHttpServer())
+      .get(`/sales/${secondSaleResponse.body.sale.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(detailResponse.body.sale).toEqual(
+      expect.objectContaining({
+        id: secondSaleResponse.body.sale.id,
+        saleNumber: 'S-2026-002',
+      }),
+    );
+  });
 });
 
 async function createSale(
@@ -377,4 +482,72 @@ function extractCookie(rawCookies: string[] | undefined, cookieName: string): st
   }
 
   return cookie.split(';')[0];
+}
+
+async function seedLinkedSalePair(
+  db: Kysely<DB>,
+  userId: string,
+  input: {
+    stockNumber: string;
+    brand: string;
+    model: string;
+    year: number;
+    purchasePrice: string;
+    targetSellingPrice: string;
+    minimumAcceptablePrice: string;
+    buyerName: string;
+    buyerContactNumber: string;
+    buyerEmail: string;
+  },
+) {
+  const buyerLead = await db
+    .insertInto('crm.buyer_leads')
+    .values({
+      buyer_name: input.buyerName,
+      contact_number: input.buyerContactNumber,
+      email: input.buyerEmail,
+      status: 'Reserved',
+      assignee_user_id: userId,
+      latest_activity_at: new Date(),
+      closing_note: 'Ready to buy once unit is confirmed',
+    })
+    .returning(['id'])
+    .executeTakeFirstOrThrow();
+
+  const vehicle = await db
+    .insertInto('inventory.vehicles')
+    .values({
+      stock_number: input.stockNumber,
+      brand: input.brand,
+      model: input.model,
+      year: input.year,
+      purchase_price: input.purchasePrice,
+      target_selling_price: input.targetSellingPrice,
+      minimum_acceptable_price: input.minimumAcceptablePrice,
+      status: 'Available',
+    })
+    .returning(['id'])
+    .executeTakeFirstOrThrow();
+
+  await db
+    .insertInto('inventory.vehicle_photos')
+    .values({
+      vehicle_id: vehicle.id,
+      file_url: `https://example.com/${input.stockNumber.toLowerCase()}.jpg`,
+      sort_order: 0,
+    })
+    .execute();
+
+  await db
+    .insertInto('crm.lead_vehicle_links')
+    .values({
+      buyer_lead_id: buyerLead.id,
+      vehicle_id: vehicle.id,
+    })
+    .execute();
+
+  return {
+    buyerLeadId: buyerLead.id,
+    vehicleId: vehicle.id,
+  };
 }

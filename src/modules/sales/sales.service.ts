@@ -13,7 +13,9 @@ import { VehiclesService } from '../vehicles/vehicles.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import {
   centsToMoney,
+  formatSaleNumber,
   getDefaultCommissionAmount,
+  getSaleNumberYear,
   mapCommissionResponse,
   mapSaleResponse,
   normalizeOptionalTrimmed,
@@ -21,6 +23,7 @@ import {
   parseMoneyToCents,
   requireTrimmed,
 } from './sales.helpers';
+import { sql } from 'kysely';
 
 @Injectable()
 export class SalesService {
@@ -90,6 +93,8 @@ export class SalesService {
               finalSaleAmountCents - parseMoneyToCents(vehicle.purchase_price, 'vehicle.purchasePrice'),
             );
 
+      const saleNumber = await this.allocateSaleNumber(trx, saleDate);
+
       const defaultCommissionAmount = agentName ? getDefaultCommissionAmount() : null;
       const finalCommissionAmount = agentName
         ? overrideAmount ?? defaultCommissionAmount ?? '0.00'
@@ -98,6 +103,7 @@ export class SalesService {
       const insertedSale = await trx
         .insertInto('sales.sales')
         .values({
+          sale_number: saleNumber,
           vehicle_id: vehicleId,
           buyer_lead_id: buyerLeadId,
           created_by_user_id: user.id,
@@ -226,5 +232,25 @@ export class SalesService {
     }
 
     return buyerLead;
+  }
+
+  private async allocateSaleNumber(trx: Transaction<DB>, saleDate: Date) {
+    const saleYear = getSaleNumberYear(saleDate);
+
+    await sql`select pg_advisory_xact_lock(${saleYear})`.execute(trx);
+
+    const latestSaleForYear = await trx
+      .selectFrom('sales.sales')
+      .select(['sale_number'])
+      .where(sql<boolean>`extract(year from sale_date) = ${saleYear}`)
+      .orderBy(sql<number>`split_part(sale_number, '-', 3)::integer`, 'desc')
+      .executeTakeFirst();
+
+    if (!latestSaleForYear?.sale_number) {
+      return formatSaleNumber(saleYear, 1);
+    }
+
+    const latestSequence = Number(latestSaleForYear.sale_number.split('-').at(-1) ?? '0');
+    return formatSaleNumber(saleYear, latestSequence + 1);
   }
 }

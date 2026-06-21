@@ -54,8 +54,17 @@ export function centsToMoney(value: number) {
   return (value / 100).toFixed(2);
 }
 
+export function getSaleNumberYear(date: Date) {
+  return date.getUTCFullYear();
+}
+
+export function formatSaleNumber(year: number, sequence: number) {
+  return `S-${year}-${String(sequence).padStart(3, '0')}`;
+}
+
 export function mapSaleResponse(sale: {
   id: string;
+  sale_number: string;
   vehicle_id: string;
   buyer_lead_id: string;
   created_by_user_id: string;
@@ -70,6 +79,7 @@ export function mapSaleResponse(sale: {
 }) {
   return {
     id: sale.id,
+    saleNumber: sale.sale_number,
     vehicleId: sale.vehicle_id,
     buyerLeadId: sale.buyer_lead_id,
     createdByUserId: sale.created_by_user_id,

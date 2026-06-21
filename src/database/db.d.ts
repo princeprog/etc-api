@@ -163,6 +163,7 @@ export interface SalesSales {
   gross_profit_amount: Numeric | null;
   id: Generated<string>;
   sale_date: Timestamp;
+  sale_number: string;
   updated_at: Generated<Timestamp>;
   vehicle_id: string;
 }
