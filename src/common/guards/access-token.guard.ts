@@ -62,6 +62,7 @@ export class AccessTokenGuard implements CanActivate {
         'auth.users.email as userEmail',
         'auth.users.full_name as userFullName',
         'auth.users.role as userRole',
+        'auth.users.must_change_password as userMustChangePassword',
         'auth.users.active as userActive',
       ])
       .where('auth.sessions.id', '=', payload.sessionId)
@@ -87,6 +88,8 @@ export class AccessTokenGuard implements CanActivate {
       email: session.userEmail,
       fullName: session.userFullName,
       role: parseRole(session.userRole),
+      mustChangePassword: session.userMustChangePassword,
+      active: session.userActive,
     } satisfies CurrentUser;
 
     return true;

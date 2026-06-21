@@ -26,4 +26,6 @@ export interface CurrentUser {
   email: User['email'];
   fullName: User['full_name'];
   role: RoleName;
+  mustChangePassword: User['must_change_password'];
+  active: User['active'];
 }

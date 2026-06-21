@@ -8,23 +8,18 @@ export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.createSchema('inventory').ifNotExists().execute();
   await db.schema.createSchema('sales').ifNotExists().execute();
 
-  await db.schema
-    .createTable('auth.users')
-    .addColumn('id', 'uuid', (col) =>
-      col.primaryKey().defaultTo(sql`gen_random_uuid()`),
-    )
-    .addColumn('email', 'varchar(255)', (col) => col.notNull().unique())
-    .addColumn('password_hash', 'text', (col) => col.notNull())
-    .addColumn('full_name', 'varchar(255)', (col) => col.notNull())
-    .addColumn('role', 'varchar(32)', (col) => col.notNull())
-    .addColumn('active', 'boolean', (col) => col.notNull().defaultTo(true))
-    .addColumn('created_at', 'timestamptz', (col) =>
-      col.notNull().defaultTo(sql`now()`),
-    )
-    .addColumn('updated_at', 'timestamptz', (col) =>
-      col.notNull().defaultTo(sql`now()`),
-    )
-    .execute();
+	await db.schema
+		.createTable('auth.users')
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`gen_random_uuid()`))
+		.addColumn('email', 'varchar(255)', (col) => col.notNull().unique())
+		.addColumn('password_hash', 'text', (col) => col.notNull())
+		.addColumn('full_name', 'varchar(255)', (col) => col.notNull())
+		.addColumn('role', 'varchar(32)', (col) => col.notNull())
+		.addColumn('must_change_password', 'boolean', (col) => col.notNull().defaultTo(false))
+		.addColumn('active', 'boolean', (col) => col.notNull().defaultTo(true))
+		.addColumn('created_at', 'timestamptz', (col) => col.notNull().defaultTo(sql`now()`))
+		.addColumn('updated_at', 'timestamptz', (col) => col.notNull().defaultTo(sql`now()`))
+		.execute()
 
   await db.schema
     .createTable('crm.seller_leads')

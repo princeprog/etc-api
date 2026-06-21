@@ -2,9 +2,11 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  Patch,
   Post,
-  Res,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -17,6 +19,8 @@ import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 import { CreateUserDto } from './dto/create-user.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -58,6 +62,15 @@ export class AuthController {
     );
   }
 
+  @UseGuards(AccessTokenGuard)
+  @Post('change-password')
+  changePassword(
+    @CurrentUser() user: CurrentUserType,
+    @Body() changePasswordDto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user, changePasswordDto);
+  }
+
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('admin')
   @Get('admin-check')
@@ -70,8 +83,26 @@ export class AuthController {
 
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('admin')
+  @Get('users')
+  listUsers() {
+    return this.authService.listUsers();
+  }
+
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles('admin')
   @Post('users')
   createUser(@Body() createUserDto: CreateUserDto) {
     return this.authService.createUser(createUserDto);
+  }
+
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles('admin')
+  @Patch('users/:id/status')
+  updateUserStatus(
+    @Param('id') id: string,
+    @Body() updateUserStatusDto: UpdateUserStatusDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.authService.updateUserStatus(id, updateUserStatusDto, user);
   }
 }
