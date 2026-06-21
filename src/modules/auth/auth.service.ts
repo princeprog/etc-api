@@ -359,7 +359,6 @@ export class AuthService {
         to: updatedUser.active,
       },
     });
-
     return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
   }
 
@@ -417,7 +416,6 @@ export class AuthService {
           user.must_change_password && !updatedUser.must_change_password,
       },
     });
-
     return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
   }
 
