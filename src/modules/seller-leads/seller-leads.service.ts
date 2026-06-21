@@ -13,6 +13,7 @@ import {
   normalizeSearch,
   parsePagination,
 } from '../../common/utils/list-query.utils';
+import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
