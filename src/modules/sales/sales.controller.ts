@@ -22,6 +22,11 @@ export class SalesController {
     return this.salesService.findAll(query);
   }
 
+  @Get('summary')
+  getSummary(@Query() query: ListSalesQueryDto) {
+    return this.salesService.getSummary(query);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.salesService.findOne(id);

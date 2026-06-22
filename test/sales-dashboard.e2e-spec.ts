@@ -450,6 +450,14 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       expect.objectContaining({
         id: secondSaleResponse.body.sale.id,
         saleNumber: 'S-2026-002',
+        buyerLead: expect.objectContaining({
+          id: secondPair.buyerLeadId,
+          buyerName: 'Buyer Second',
+          contactNumber: '09170000021',
+          email: 'buyer.second@example.com',
+          status: 'Won',
+          closingNote: 'Ready to buy once unit is confirmed',
+        }),
       }),
     );
   });
@@ -584,6 +592,104 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
         paginatedAllSales.body.sales[0].id,
       ),
     ).toBe(true);
+  });
+
+  it('returns filter-aware sales summary totals that ignore pagination', async () => {
+    await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: linkedVehicleId,
+        buyerLeadId,
+        saleDate: '2026-06-01T09:30:00.000Z',
+        finalSaleAmount: '1280000.00',
+        agentName: 'Agent Cruz',
+      })
+      .expect(201);
+
+    const secondPair = await seedLinkedSalePair(db, userId, {
+      stockNumber: 'SALE-5001',
+      brand: 'Ford',
+      model: 'Everest',
+      year: 2024,
+      purchasePrice: '1500000.00',
+      targetSellingPrice: '1700000.00',
+      minimumAcceptablePrice: '1650000.00',
+      buyerName: 'Summary Buyer One',
+      buyerContactNumber: '09170000051',
+      buyerEmail: 'summary-buyer-one@example.com',
+    });
+
+    await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: secondPair.vehicleId,
+        buyerLeadId: secondPair.buyerLeadId,
+        saleDate: '2026-06-15T10:00:00.000Z',
+        finalSaleAmount: '1690000.00',
+        agentName: 'Agent Mira',
+        commissionOverrideAmount: '8000.00',
+        commissionOverrideReason: 'Top closer bonus',
+      })
+      .expect(201);
+
+    const thirdPair = await seedLinkedSalePair(db, userId, {
+      stockNumber: 'SALE-5002',
+      brand: 'Nissan',
+      model: 'Terra',
+      year: 2023,
+      purchasePrice: '1400000.00',
+      targetSellingPrice: '1550000.00',
+      minimumAcceptablePrice: '1500000.00',
+      buyerName: 'Summary Buyer Two',
+      buyerContactNumber: '09170000052',
+      buyerEmail: 'summary-buyer-two@example.com',
+    });
+
+    const thirdSale = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: thirdPair.vehicleId,
+        buyerLeadId: thirdPair.buyerLeadId,
+        saleDate: '2026-05-01T12:00:00.000Z',
+        finalSaleAmount: '1540000.00',
+      })
+      .expect(201);
+
+    await db
+      .updateTable('sales.sales')
+      .set({
+        commission_locked: false,
+        updated_at: new Date(),
+      })
+      .where('id', '=', thirdSale.body.sale.id)
+      .execute();
+
+    const summaryResponse = await request(app.getHttpServer())
+      .get('/sales/summary?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=99&pageSize=1')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(summaryResponse.body).toEqual({
+      totalSales: 1,
+      totalRevenue: '1690000.00',
+      totalGrossProfit: '190000.00',
+      totalCommissionPayouts: '8000.00',
+    });
+
+    const allSummaryResponse = await request(app.getHttpServer())
+      .get('/sales/summary')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(allSummaryResponse.body).toEqual({
+      totalSales: 3,
+      totalRevenue: '4510000.00',
+      totalGrossProfit: '510000.00',
+      totalCommissionPayouts: '13000.00',
+    });
   });
 });
 

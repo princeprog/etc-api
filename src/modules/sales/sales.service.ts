@@ -171,43 +171,8 @@ export class SalesService {
 
   async findAll(query: ListSalesQueryDto = {}) {
     const pagination = parsePagination(query);
-    const search = normalizeSearch(query.search);
-    const agentName = normalizeOptionalTrimmed(query.agentName);
     const sort = this.parseSort(query.sortBy, query.sortOrder);
-
-    let salesQuery = this.db
-      .selectFrom('sales.sales')
-      .innerJoin('inventory.vehicles', 'inventory.vehicles.id', 'sales.sales.vehicle_id')
-      .innerJoin('crm.buyer_leads', 'crm.buyer_leads.id', 'sales.sales.buyer_lead_id')
-      .innerJoin('sales.commissions', 'sales.commissions.sale_id', 'sales.sales.id');
-
-    if (search) {
-      const pattern = `%${search.toLowerCase()}%`;
-      salesQuery = salesQuery.where(({ eb, or }) =>
-        or([
-          eb(sql<string>`lower(sales.sales.sale_number)`, 'like', pattern),
-          eb(sql<string>`lower(sales.sales.id::text)`, 'like', pattern),
-          eb(sql<string>`lower(inventory.vehicles.stock_number)`, 'like', pattern),
-          eb(sql<string>`lower(inventory.vehicles.brand)`, 'like', pattern),
-          eb(sql<string>`lower(inventory.vehicles.model)`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(sales.sales.agent_name, ''))`, 'like', pattern),
-          eb(sql<string>`lower(crm.buyer_leads.buyer_name)`, 'like', pattern),
-          eb(sql<string>`lower(crm.buyer_leads.contact_number)`, 'like', pattern),
-        ]),
-      );
-    }
-
-    if (agentName) {
-      salesQuery = salesQuery.where(sql<boolean>`lower(coalesce(sales.sales.agent_name, '')) = lower(${agentName})`);
-    }
-
-    if (query.status) {
-      salesQuery = this.applyStatusFilter(salesQuery, query.status);
-    }
-
-    if (query.dateRange) {
-      salesQuery = this.applyDateRangeFilter(salesQuery, query.dateRange);
-    }
+    const salesQuery = this.buildFilteredSalesQuery(query);
 
     const totalRow = await salesQuery
       .select(({ fn }) => fn.countAll<number>().as('count'))
@@ -237,6 +202,28 @@ export class SalesService {
     };
   }
 
+  async getSummary(query: ListSalesQueryDto = {}) {
+    const summary = await this.buildFilteredSalesQuery(query)
+      .select(({ fn }) => [
+        fn.countAll<number>().as('totalSales'),
+        sql<string>`coalesce(sum(sales.sales.final_sale_amount::numeric), 0)::text`.as('totalRevenue'),
+        sql<string>`coalesce(sum(coalesce(sales.sales.gross_profit_amount, '0.00')::numeric), 0)::text`.as(
+          'totalGrossProfit',
+        ),
+        sql<string>`coalesce(sum(sales.commissions.final_amount::numeric), 0)::text`.as(
+          'totalCommissionPayouts',
+        ),
+      ])
+      .executeTakeFirstOrThrow();
+
+    return {
+      totalSales: Number(summary.totalSales),
+      totalRevenue: this.normalizeSummaryMoney(summary.totalRevenue),
+      totalGrossProfit: this.normalizeSummaryMoney(summary.totalGrossProfit),
+      totalCommissionPayouts: this.normalizeSummaryMoney(summary.totalCommissionPayouts),
+    };
+  }
+
   async findOne(id: string) {
     return {
       sale: await this.getSaleOrThrow(id),
@@ -260,8 +247,33 @@ export class SalesService {
       .where('sale_id', '=', id)
       .executeTakeFirstOrThrow();
 
+    const buyerLead = await this.db
+      .selectFrom('crm.buyer_leads')
+      .select([
+        'id',
+        'buyer_name',
+        'contact_number',
+        'email',
+        'status',
+        'closing_note',
+      ])
+      .where('id', '=', sale.buyer_lead_id)
+      .executeTakeFirst();
+
+    if (!buyerLead) {
+      throw new NotFoundException(`Buyer lead ${sale.buyer_lead_id} was not found`);
+    }
+
     return {
       ...mapSaleResponse(sale),
+      buyerLead: {
+        id: buyerLead.id,
+        buyerName: buyerLead.buyer_name,
+        contactNumber: buyerLead.contact_number,
+        email: buyerLead.email,
+        status: buyerLead.status,
+        closingNote: buyerLead.closing_note,
+      },
       commission: mapCommissionResponse(commission),
       vehicle: (await this.vehiclesService.findOne(sale.vehicle_id)).vehicle,
     };
@@ -284,9 +296,24 @@ export class SalesService {
       .where('sale_id', 'in', ids)
       .execute();
 
+    const buyerLeadIds = sales.map((sale) => sale.buyer_lead_id);
+    const buyerLeads = await this.db
+      .selectFrom('crm.buyer_leads')
+      .select([
+        'id',
+        'buyer_name',
+        'contact_number',
+        'email',
+        'status',
+        'closing_note',
+      ])
+      .where('id', 'in', buyerLeadIds)
+      .execute();
+
     const vehicles = await Promise.all(sales.map((sale) => this.vehiclesService.findOne(sale.vehicle_id)));
     const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.vehicle.id, vehicle.vehicle]));
     const commissionBySaleId = new Map(commissions.map((commission) => [commission.sale_id, commission]));
+    const buyerLeadById = new Map(buyerLeads.map((buyerLead) => [buyerLead.id, buyerLead]));
     const salesById = new Map(sales.map((sale) => [sale.id, sale]));
 
     return ids.map((id) => {
@@ -308,8 +335,22 @@ export class SalesService {
         throw new NotFoundException(`Vehicle ${sale.vehicle_id} was not found`);
       }
 
+      const buyerLead = buyerLeadById.get(sale.buyer_lead_id);
+
+      if (!buyerLead) {
+        throw new NotFoundException(`Buyer lead ${sale.buyer_lead_id} was not found`);
+      }
+
       return {
         ...mapSaleResponse(sale),
+        buyerLead: {
+          id: buyerLead.id,
+          buyerName: buyerLead.buyer_name,
+          contactNumber: buyerLead.contact_number,
+          email: buyerLead.email,
+          status: buyerLead.status,
+          closingNote: buyerLead.closing_note,
+        },
         commission: mapCommissionResponse(commission),
         vehicle,
       };
@@ -342,6 +383,49 @@ export class SalesService {
     }
 
     return buyerLead;
+  }
+
+  private buildFilteredSalesQuery(query: ListSalesQueryDto = {}) {
+    const search = normalizeSearch(query.search);
+    const agentName = normalizeOptionalTrimmed(query.agentName);
+
+    let salesQuery = this.db
+      .selectFrom('sales.sales')
+      .innerJoin('inventory.vehicles', 'inventory.vehicles.id', 'sales.sales.vehicle_id')
+      .innerJoin('crm.buyer_leads', 'crm.buyer_leads.id', 'sales.sales.buyer_lead_id')
+      .innerJoin('sales.commissions', 'sales.commissions.sale_id', 'sales.sales.id');
+
+    if (search) {
+      const pattern = `%${search.toLowerCase()}%`;
+      salesQuery = salesQuery.where(({ eb, or }) =>
+        or([
+          eb(sql<string>`lower(sales.sales.sale_number)`, 'like', pattern),
+          eb(sql<string>`lower(sales.sales.id::text)`, 'like', pattern),
+          eb(sql<string>`lower(inventory.vehicles.stock_number)`, 'like', pattern),
+          eb(sql<string>`lower(inventory.vehicles.brand)`, 'like', pattern),
+          eb(sql<string>`lower(inventory.vehicles.model)`, 'like', pattern),
+          eb(sql<string>`lower(coalesce(sales.sales.agent_name, ''))`, 'like', pattern),
+          eb(sql<string>`lower(crm.buyer_leads.buyer_name)`, 'like', pattern),
+          eb(sql<string>`lower(crm.buyer_leads.contact_number)`, 'like', pattern),
+        ]),
+      );
+    }
+
+    if (agentName) {
+      salesQuery = salesQuery.where(
+        sql<boolean>`lower(coalesce(sales.sales.agent_name, '')) = lower(${agentName})`,
+      );
+    }
+
+    if (query.status) {
+      salesQuery = this.applyStatusFilter(salesQuery, query.status);
+    }
+
+    if (query.dateRange) {
+      salesQuery = this.applyDateRangeFilter(salesQuery, query.dateRange);
+    }
+
+    return salesQuery;
   }
 
   private async allocateSaleNumber(trx: Transaction<DB>, saleDate: Date) {
@@ -443,5 +527,15 @@ export class SalesService {
     }
 
     throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
+  }
+
+  private normalizeSummaryMoney(value: string) {
+    const numericValue = Number(value);
+
+    if (Number.isNaN(numericValue)) {
+      return '0.00';
+    }
+
+    return numericValue.toFixed(2);
   }
 }
