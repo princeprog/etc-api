@@ -31,6 +31,7 @@ import {
 } from '../../common/utils/auth.utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 
 const DEFAULT_STAFF_PASSWORD = '123456';
 const MIN_PASSWORD_LENGTH = 6;
@@ -237,12 +238,46 @@ export class AuthService {
     return { user: this.toCurrentUser(this.normalizeUser(insertedUser)) };
   }
 
-  async listUsers(): Promise<{ users: CurrentUser[] }> {
-    const users = await this.db
+  async listUsers(query: ListUsersQueryDto): Promise<{ users: CurrentUser[] }> {
+    const search = query.search?.trim();
+    const status = query.status?.trim();
+    let usersQuery = this.db
       .selectFrom('auth.users')
       .selectAll()
-      .orderBy('created_at', 'asc')
-      .execute();
+      .where('role', '=', 'staff');
+
+    if (search) {
+      usersQuery = usersQuery.where((expressionBuilder) =>
+        expressionBuilder.or([
+          expressionBuilder('email', 'ilike', `%${search}%`),
+          expressionBuilder('full_name', 'ilike', `%${search}%`),
+        ]),
+      );
+    }
+
+    if (status) {
+      switch (status) {
+        case 'active':
+          usersQuery = usersQuery
+            .where('active', '=', true)
+            .where('must_change_password', '=', false);
+          break;
+        case 'disabled':
+          usersQuery = usersQuery.where('active', '=', false);
+          break;
+        case 'change_password_required':
+          usersQuery = usersQuery
+            .where('active', '=', true)
+            .where('must_change_password', '=', true);
+          break;
+        default:
+          throw new BadRequestException(
+            'status must be active, disabled, or change_password_required',
+          );
+      }
+    }
+
+    const users = await usersQuery.orderBy('created_at', 'asc').execute();
 
     return {
       users: users.map((user) => this.toCurrentUser(this.normalizeUser(user))),

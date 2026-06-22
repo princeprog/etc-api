@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -21,6 +22,7 @@ import type { CurrentUser as CurrentUserType } from '../../common/types/auth.typ
 import { CreateUserDto } from './dto/create-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -84,8 +86,8 @@ export class AuthController {
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('admin')
   @Get('users')
-  listUsers() {
-    return this.authService.listUsers();
+  listUsers(@Query() query: ListUsersQueryDto) {
+    return this.authService.listUsers(query);
   }
 
   @UseGuards(AccessTokenGuard, RolesGuard)
