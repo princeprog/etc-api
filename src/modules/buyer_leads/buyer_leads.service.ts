@@ -5,7 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
 
+import {
+  buildPaginatedResponse,
+  normalizeSearch,
+  parsePagination,
+} from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import {
@@ -13,6 +19,7 @@ import {
   parseBuyerLeadStatus,
 } from './buyer_leads.helpers';
 import { CreateBuyerLeadDto } from './dto/create-buyer_lead.dto';
+import { ListBuyerLeadsQueryDto } from './dto/list-buyer-leads-query.dto';
 import { LinkBuyerLeadVehicleDto } from './dto/link-buyer-lead-vehicle.dto';
 import { UpdateBuyerLeadDto } from './dto/update-buyer_lead.dto';
 
@@ -47,17 +54,59 @@ export class BuyerLeadsService {
     return { buyerLead: await this.getBuyerLeadOrThrow(insertedLead.id) };
   }
 
-  async findAll() {
-    const buyerLeads = await this.db
-      .selectFrom('crm.buyer_leads')
-      .select(['id'])
-      .orderBy('created_at', 'desc')
+  async findAll(query: ListBuyerLeadsQueryDto = {}) {
+    const pagination = parsePagination(query);
+    const search = normalizeSearch(query.search);
+    const status = query.status ? parseBuyerLeadStatus(query.status, 'New Inquiry') : undefined;
+    const eligibleForSale = this.parseBooleanQuery(query.eligibleForSale);
+    const sort = this.parseSort(query.sortBy, query.sortOrder);
+
+    let buyerLeadsQuery = this.db.selectFrom('crm.buyer_leads');
+
+    if (status) {
+      buyerLeadsQuery = buyerLeadsQuery.where('status', '=', status);
+    }
+
+    if (eligibleForSale) {
+      buyerLeadsQuery = buyerLeadsQuery.where('status', '!=', 'Won');
+    }
+
+    if (search) {
+      const pattern = `%${search.toLowerCase()}%`;
+      buyerLeadsQuery = buyerLeadsQuery.where(({ eb, or }) =>
+        or([
+          eb(sql<string>`lower(buyer_name)`, 'like', pattern),
+          eb(sql<string>`lower(contact_number)`, 'like', pattern),
+          eb(sql<string>`lower(coalesce(email, ''))`, 'like', pattern),
+          eb(sql<string>`coalesce(desired_budget::text, '')`, 'like', pattern),
+        ]),
+      );
+    }
+
+    const totalRow = await buyerLeadsQuery
+      .select(({ fn }) => fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+    const total = Number(totalRow.count);
+
+    const leads = await buyerLeadsQuery
+      .selectAll()
+      .orderBy(sort.column, sort.direction)
+      .offset(pagination.offset)
+      .limit(pagination.pageSize)
       .execute();
 
+    const response = buildPaginatedResponse(
+      await this.mapBuyerLeadList(leads),
+      pagination,
+      total,
+    );
+
     return {
-      buyerLeads: await Promise.all(
-        buyerLeads.map((lead) => this.getBuyerLeadOrThrow(lead.id)),
-      ),
+      buyerLeads: response.items,
+      page: response.page,
+      pageSize: response.pageSize,
+      total: response.total,
+      totalPages: response.totalPages,
     };
   }
 
@@ -221,29 +270,12 @@ export class BuyerLeadsService {
 
   private async getBuyerLeadOrThrow(id: string) {
     const lead = await this.getLeadRecordOrThrow(id);
-    const vehicles = await this.db
-      .selectFrom('crm.lead_vehicle_links')
-      .innerJoin(
-        'inventory.vehicles',
-        'inventory.vehicles.id',
-        'crm.lead_vehicle_links.vehicle_id',
-      )
-      .select([
-        'inventory.vehicles.id as id',
-        'inventory.vehicles.stock_number as stockNumber',
-        'inventory.vehicles.brand as brand',
-        'inventory.vehicles.model as model',
-        'inventory.vehicles.year as year',
-        'inventory.vehicles.status as status',
-      ])
-      .where('crm.lead_vehicle_links.buyer_lead_id', '=', id)
-      .orderBy('crm.lead_vehicle_links.created_at', 'asc')
-      .execute();
+    const vehicles = await this.getVehicleSummariesForBuyerLeadIds([id]);
 
     return mapBuyerLeadResponse({
       ...lead,
       status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
-      vehicles,
+      vehicles: vehicles.get(id) ?? [],
     });
   }
 
@@ -270,4 +302,129 @@ export class BuyerLeadsService {
 
     return trimmed;
   }
+
+  private async mapBuyerLeadList(
+    leads: Array<{
+      id: string
+      buyer_name: string
+      contact_number: string
+      email: string | null
+      facebook_name: string | null
+      inquiry_source: string | null
+      desired_budget: string | null
+      notes: string | null
+      status: string
+      assignee_user_id: string | null
+      latest_activity_at: Date | null
+      closing_note: string | null
+      created_at: Date
+      updated_at: Date
+    }>,
+  ) {
+    const vehicleMap = await this.getVehicleSummariesForBuyerLeadIds(leads.map((lead) => lead.id));
+
+    return leads.map((lead) =>
+      mapBuyerLeadResponse({
+        ...lead,
+        status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
+        vehicles: vehicleMap.get(lead.id) ?? [],
+      }),
+    );
+  }
+
+  private async getVehicleSummariesForBuyerLeadIds(buyerLeadIds: string[]) {
+    const byLeadId = new Map<string, BuyerLeadVehicleSummary[]>();
+
+    if (buyerLeadIds.length === 0) {
+      return byLeadId;
+    }
+
+    const vehicles = await this.db
+      .selectFrom('crm.lead_vehicle_links')
+      .innerJoin(
+        'inventory.vehicles',
+        'inventory.vehicles.id',
+        'crm.lead_vehicle_links.vehicle_id',
+      )
+      .select([
+        'crm.lead_vehicle_links.buyer_lead_id as buyerLeadId',
+        'inventory.vehicles.id as id',
+        'inventory.vehicles.stock_number as stockNumber',
+        'inventory.vehicles.brand as brand',
+        'inventory.vehicles.model as model',
+        'inventory.vehicles.year as year',
+        'inventory.vehicles.status as status',
+      ])
+      .where('crm.lead_vehicle_links.buyer_lead_id', 'in', buyerLeadIds)
+      .orderBy('crm.lead_vehicle_links.created_at', 'asc')
+      .execute();
+
+    for (const vehicle of vehicles) {
+      const current = byLeadId.get(vehicle.buyerLeadId) ?? [];
+      current.push({
+        id: vehicle.id,
+        stockNumber: vehicle.stockNumber,
+        brand: vehicle.brand,
+        model: vehicle.model,
+        year: vehicle.year,
+        status: vehicle.status,
+      });
+      byLeadId.set(vehicle.buyerLeadId, current);
+    }
+
+    return byLeadId;
+  }
+
+  private parseSort(sortBy?: string, sortOrder?: string) {
+    const direction = this.parseSortOrder(sortOrder);
+
+    switch (sortBy) {
+      case undefined:
+      case 'updatedAt':
+        return { column: 'updated_at' as const, direction };
+      case 'createdAt':
+        return { column: 'created_at' as const, direction };
+      case 'buyerName':
+        return { column: 'buyer_name' as const, direction };
+      case 'status':
+        return { column: 'status' as const, direction };
+      case 'desiredBudget':
+        return { column: 'desired_budget' as const, direction };
+      default:
+        throw new BadRequestException(`Unsupported buyer lead sort: ${sortBy}`);
+    }
+  }
+
+  private parseSortOrder(sortOrder?: string): 'asc' | 'desc' {
+    if (!sortOrder || sortOrder === 'desc') {
+      return 'desc';
+    }
+
+    if (sortOrder === 'asc') {
+      return 'asc';
+    }
+
+    throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
+  }
+
+  private parseBooleanQuery(value?: boolean | string) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return false;
+    }
+
+    return value.toLowerCase() === 'true';
+  }
 }
+
+type BuyerLeadVehicleSummary = {
+  id: string;
+  stockNumber: string;
+  brand: string;
+  model: string;
+  year: number;
+  status: string;
+};

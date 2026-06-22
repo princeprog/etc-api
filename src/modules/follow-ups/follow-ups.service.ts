@@ -6,6 +6,11 @@ import {
 } from '@nestjs/common';
 import type { Kysely, SelectQueryBuilder } from 'kysely';
 
+import {
+  buildPaginatedResponse,
+  normalizeSearch,
+  parsePagination,
+} from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
@@ -13,16 +18,13 @@ import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { ListFollowUpsQueryDto } from './dto/list-follow-ups-query.dto';
 import { UpdateFollowUpDto } from './dto/update-follow-up.dto';
 import {
-  DEFAULT_PAGE,
   deriveFollowUpStatus,
   mapFollowUpResponse,
   parseDueDate,
   parseFollowUpStatus,
   parseLeadType,
   parseOptionalLeadType,
-  parsePageNumber,
   parseSort,
-  resolvePageSize,
 } from './follow-ups.helpers';
 
 @Injectable()
@@ -86,14 +88,13 @@ export class FollowUpsService {
 
   async findAll(query: ListFollowUpsQueryDto = {}) {
     const now = new Date();
+    const pagination = parsePagination(query);
     const status = parseFollowUpStatus(query.status);
     const leadType = parseOptionalLeadType(query.leadType);
     const dueFrom = parseDueDate(query.dueFrom, 'dueFrom');
     const dueTo = parseDueDate(query.dueTo, 'dueTo');
-    const search = query.search?.trim();
+    const search = normalizeSearch(query.search);
     const sort = parseSort(query.sort);
-    const page = parsePageNumber(query.page, DEFAULT_PAGE);
-    const pageSize = resolvePageSize(query.pageSize);
 
     const filtered = this.db
       .selectFrom('crm.follow_ups as fu')
@@ -158,8 +159,8 @@ export class FollowUpsService {
       ])
       .orderBy(sortColumn, sortDirection)
       .orderBy('fu.id', 'asc')
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
+      .limit(pagination.pageSize)
+      .offset(pagination.offset)
       .execute();
 
     const followUps = rows.map((row) => {
@@ -181,14 +182,14 @@ export class FollowUpsService {
       });
     });
 
+    const response = buildPaginatedResponse(followUps, pagination, total);
+
     return {
-      followUps,
-      pagination: {
-        total,
-        page,
-        pageSize,
-        pageCount: Math.max(1, Math.ceil(total / pageSize)),
-      },
+      followUps: response.items,
+      page: response.page,
+      pageSize: response.pageSize,
+      total: response.total,
+      totalPages: response.totalPages,
     };
   }
 

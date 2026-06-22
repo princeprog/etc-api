@@ -1,16 +1,9 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { ConvertSellerLeadDto } from './dto/convert-seller-lead.dto';
 import { CreateSellerLeadDto } from './dto/create-seller-lead.dto';
+import { ListSellerLeadsQueryDto } from './dto/list-seller-leads-query.dto';
 import { UpdateSellerLeadDto } from './dto/update-seller-lead.dto';
 import { SellerLeadsService } from './seller-leads.service';
 
@@ -25,8 +18,8 @@ export class SellerLeadsController {
   }
 
   @Get()
-  findAll() {
-    return this.sellerLeadsService.findAll();
+  findAll(@Query() query: ListSellerLeadsQueryDto) {
+    return this.sellerLeadsService.findAll(query);
   }
 
   @Get(':id')

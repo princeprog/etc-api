@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import { SalesService } from './sales.service';
 
 @UseGuards(AccessTokenGuard)
@@ -17,8 +18,13 @@ export class SalesController {
   }
 
   @Get()
-  findAll() {
-    return this.salesService.findAll();
+  findAll(@Query() query: ListSalesQueryDto) {
+    return this.salesService.findAll(query);
+  }
+
+  @Get('summary')
+  getSummary(@Query() query: ListSalesQueryDto) {
+    return this.salesService.getSummary(query);
   }
 
   @Get(':id')
