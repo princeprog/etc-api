@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
+import { ListFollowUpsQueryDto } from './dto/list-follow-ups-query.dto';
 import { FollowUpsService } from './follow-ups.service';
 
 @UseGuards(AccessTokenGuard)
@@ -16,8 +17,8 @@ export class FollowUpsController {
   }
 
   @Get()
-  findAll(@Query('status') status?: string) {
-    return this.followUpsService.findAll(status);
+  findAll(@Query() query: ListFollowUpsQueryDto) {
+    return this.followUpsService.findAll(query);
   }
 
   @Get(':id')

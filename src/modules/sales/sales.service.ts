@@ -4,13 +4,19 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Kysely, Transaction } from 'kysely';
+import type { Kysely, SelectQueryBuilder, Transaction } from 'kysely';
 
 import type { CurrentUser } from '../../common/types/auth.types';
+import {
+  buildPaginatedResponse,
+  normalizeSearch,
+  parsePagination,
+} from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import {
   centsToMoney,
   formatSaleNumber,
@@ -163,16 +169,71 @@ export class SalesService {
     };
   }
 
-  async findAll() {
-    const sales = await this.db
+  async findAll(query: ListSalesQueryDto = {}) {
+    const pagination = parsePagination(query);
+    const search = normalizeSearch(query.search);
+    const agentName = normalizeOptionalTrimmed(query.agentName);
+    const sort = this.parseSort(query.sortBy, query.sortOrder);
+
+    let salesQuery = this.db
       .selectFrom('sales.sales')
-      .select(['id'])
-      .orderBy('sale_date', 'desc')
-      .orderBy('created_at', 'desc')
+      .innerJoin('inventory.vehicles', 'inventory.vehicles.id', 'sales.sales.vehicle_id')
+      .innerJoin('crm.buyer_leads', 'crm.buyer_leads.id', 'sales.sales.buyer_lead_id')
+      .innerJoin('sales.commissions', 'sales.commissions.sale_id', 'sales.sales.id');
+
+    if (search) {
+      const pattern = `%${search.toLowerCase()}%`;
+      salesQuery = salesQuery.where(({ eb, or }) =>
+        or([
+          eb(sql<string>`lower(sales.sales.sale_number)`, 'like', pattern),
+          eb(sql<string>`lower(sales.sales.id::text)`, 'like', pattern),
+          eb(sql<string>`lower(inventory.vehicles.stock_number)`, 'like', pattern),
+          eb(sql<string>`lower(inventory.vehicles.brand)`, 'like', pattern),
+          eb(sql<string>`lower(inventory.vehicles.model)`, 'like', pattern),
+          eb(sql<string>`lower(coalesce(sales.sales.agent_name, ''))`, 'like', pattern),
+          eb(sql<string>`lower(crm.buyer_leads.buyer_name)`, 'like', pattern),
+          eb(sql<string>`lower(crm.buyer_leads.contact_number)`, 'like', pattern),
+        ]),
+      );
+    }
+
+    if (agentName) {
+      salesQuery = salesQuery.where(sql<boolean>`lower(coalesce(sales.sales.agent_name, '')) = lower(${agentName})`);
+    }
+
+    if (query.status) {
+      salesQuery = this.applyStatusFilter(salesQuery, query.status);
+    }
+
+    if (query.dateRange) {
+      salesQuery = this.applyDateRangeFilter(salesQuery, query.dateRange);
+    }
+
+    const totalRow = await salesQuery
+      .select(({ fn }) => fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+    const total = Number(totalRow.count);
+
+    const sales = await salesQuery
+      .select('sales.sales.id as id')
+      .orderBy(sort.column, sort.direction)
+      .orderBy('sales.sales.created_at', 'desc')
+      .offset(pagination.offset)
+      .limit(pagination.pageSize)
       .execute();
 
+    const response = buildPaginatedResponse(
+      await this.getSalesOrThrow(sales.map((sale) => sale.id)),
+      pagination,
+      total,
+    );
+
     return {
-      sales: await Promise.all(sales.map((sale) => this.getSaleOrThrow(sale.id))),
+      sales: response.items,
+      page: response.page,
+      pageSize: response.pageSize,
+      total: response.total,
+      totalPages: response.totalPages,
     };
   }
 
@@ -204,6 +265,55 @@ export class SalesService {
       commission: mapCommissionResponse(commission),
       vehicle: (await this.vehiclesService.findOne(sale.vehicle_id)).vehicle,
     };
+  }
+
+  private async getSalesOrThrow(ids: string[]) {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const sales = await this.db
+      .selectFrom('sales.sales')
+      .selectAll()
+      .where('id', 'in', ids)
+      .execute();
+
+    const commissions = await this.db
+      .selectFrom('sales.commissions')
+      .selectAll()
+      .where('sale_id', 'in', ids)
+      .execute();
+
+    const vehicles = await Promise.all(sales.map((sale) => this.vehiclesService.findOne(sale.vehicle_id)));
+    const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.vehicle.id, vehicle.vehicle]));
+    const commissionBySaleId = new Map(commissions.map((commission) => [commission.sale_id, commission]));
+    const salesById = new Map(sales.map((sale) => [sale.id, sale]));
+
+    return ids.map((id) => {
+      const sale = salesById.get(id);
+
+      if (!sale) {
+        throw new NotFoundException(`Sale ${id} was not found`);
+      }
+
+      const commission = commissionBySaleId.get(id);
+
+      if (!commission) {
+        throw new NotFoundException(`Commission for sale ${id} was not found`);
+      }
+
+      const vehicle = vehicleById.get(sale.vehicle_id);
+
+      if (!vehicle) {
+        throw new NotFoundException(`Vehicle ${sale.vehicle_id} was not found`);
+      }
+
+      return {
+        ...mapSaleResponse(sale),
+        commission: mapCommissionResponse(commission),
+        vehicle,
+      };
+    });
   }
 
   private async getVehicleOrThrow(id: string, trx: Transaction<DB>) {
@@ -252,5 +362,86 @@ export class SalesService {
 
     const latestSequence = Number(latestSaleForYear.sale_number.split('-').at(-1) ?? '0');
     return formatSaleNumber(saleYear, latestSequence + 1);
+  }
+
+  private applyStatusFilter(
+    query: SelectQueryBuilder<
+      DB,
+      'sales.sales' | 'inventory.vehicles' | 'crm.buyer_leads' | 'sales.commissions',
+      object
+    >,
+    status: string,
+  ) {
+    switch (status) {
+      case 'finalized':
+        return query
+          .where('sales.sales.commission_locked', '=', true)
+          .where('sales.commissions.override_amount', 'is', null);
+      case 'commission_locked':
+        return query
+          .where('sales.sales.commission_locked', '=', true)
+          .where('sales.commissions.override_amount', 'is not', null);
+      case 'needs_review':
+        return query.where('sales.sales.commission_locked', '=', false);
+      default:
+        throw new BadRequestException(`Unsupported sales status: ${status}`);
+    }
+  }
+
+  private applyDateRangeFilter(
+    query: SelectQueryBuilder<
+      DB,
+      'sales.sales' | 'inventory.vehicles' | 'crm.buyer_leads' | 'sales.commissions',
+      object
+    >,
+    dateRange: string,
+  ) {
+    const now = new Date();
+
+    switch (dateRange) {
+      case 'all':
+      case '':
+        return query;
+      case 'this_month':
+        return query.where(
+          sql<boolean>`date_trunc('month', sales.sales.sale_date) = date_trunc('month', ${now}::timestamptz)`,
+        );
+      case 'last_30_days':
+        return query.where('sales.sales.sale_date', '>=', new Date(now.getTime() - 30 * 86_400_000));
+      default:
+        throw new BadRequestException(`Unsupported sales date range: ${dateRange}`);
+    }
+  }
+
+  private parseSort(sortBy?: string, sortOrder?: string) {
+    const direction = this.parseSortOrder(sortOrder);
+
+    switch (sortBy) {
+      case undefined:
+      case 'saleDate':
+        return { column: 'sales.sales.sale_date' as const, direction };
+      case 'createdAt':
+        return { column: 'sales.sales.created_at' as const, direction };
+      case 'finalSaleAmount':
+        return { column: 'sales.sales.final_sale_amount' as const, direction };
+      case 'saleNumber':
+        return { column: 'sales.sales.sale_number' as const, direction };
+      case 'agentName':
+        return { column: 'sales.sales.agent_name' as const, direction };
+      default:
+        throw new BadRequestException(`Unsupported sales sort: ${sortBy}`);
+    }
+  }
+
+  private parseSortOrder(sortOrder?: string): 'asc' | 'desc' {
+    if (!sortOrder || sortOrder === 'desc') {
+      return 'desc';
+    }
+
+    if (sortOrder === 'asc') {
+      return 'asc';
+    }
+
+    throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
   }
 }

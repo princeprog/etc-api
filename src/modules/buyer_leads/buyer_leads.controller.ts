@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { BuyerLeadsService } from './buyer_leads.service';
 import { CreateBuyerLeadDto } from './dto/create-buyer_lead.dto';
+import { ListBuyerLeadsQueryDto } from './dto/list-buyer-leads-query.dto';
 import { LinkBuyerLeadVehicleDto } from './dto/link-buyer-lead-vehicle.dto';
 import { UpdateBuyerLeadDto } from './dto/update-buyer_lead.dto';
 
@@ -17,8 +18,8 @@ export class BuyerLeadsController {
   }
 
   @Get()
-  findAll() {
-    return this.buyerLeadsService.findAll();
+  findAll(@Query() query: ListBuyerLeadsQueryDto) {
+    return this.buyerLeadsService.findAll(query);
   }
 
   @Get(':id')

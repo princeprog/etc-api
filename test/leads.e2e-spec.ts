@@ -273,6 +273,165 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
   });
 
+  it('filters and paginates buyer leads, seller leads, and follow-ups from query params', async () => {
+    const assigneeUserId = await currentUserId(app);
+
+    await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Alpha Buyer',
+        contactNumber: '09170010001',
+        email: 'alpha@example.com',
+        desiredBudget: '900000.00',
+        status: 'Contacted',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Bravo Buyer',
+        contactNumber: '09170010002',
+        email: 'bravo@example.com',
+        desiredBudget: '1200000.00',
+        status: 'Interested',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Charlie Buyer',
+        contactNumber: '09170010003',
+        email: 'charlie@example.com',
+        desiredBudget: '1500000.00',
+        status: 'Interested',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', authCookies)
+      .send({
+        sellerName: 'Searchable Seller',
+        contactNumber: '09175550001',
+        vehicleBrand: 'Ford',
+        vehicleModel: 'Ranger',
+        vehicleVariant: 'Wildtrak',
+        status: 'Negotiating',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', authCookies)
+      .send({
+        sellerName: 'Plain Seller',
+        contactNumber: '09175550002',
+        vehicleBrand: 'Toyota',
+        vehicleModel: 'Vios',
+        status: 'Contacted',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    const paginatedBuyerLeads = await request(app.getHttpServer())
+      .get('/buyer-leads?status=Interested&search=buyer&page=2&pageSize=1')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(paginatedBuyerLeads.body).toEqual(
+      expect.objectContaining({
+        page: 2,
+        pageSize: 1,
+        total: 2,
+        totalPages: 2,
+      }),
+    );
+    expect(paginatedBuyerLeads.body.buyerLeads).toHaveLength(1);
+    expect(paginatedBuyerLeads.body.buyerLeads[0]).toEqual(
+      expect.objectContaining({
+        status: 'Interested',
+      }),
+    );
+
+    const filteredSellerLeads = await request(app.getHttpServer())
+      .get('/seller-leads?status=Negotiating&search=wildtrak&page=1&pageSize=5')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(filteredSellerLeads.body).toEqual(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 5,
+        total: 1,
+        totalPages: 1,
+      }),
+    );
+    expect(filteredSellerLeads.body.sellerLeads).toEqual([
+      expect.objectContaining({
+        sellerName: 'Searchable Seller',
+        vehicleVariant: 'Wildtrak',
+        status: 'Negotiating',
+      }),
+    ]);
+
+    const buyerLeadResponse = await createBuyerLead(app, authCookies);
+    const buyerLeadId = buyerLeadResponse.body.buyerLead.id;
+
+    await request(app.getHttpServer())
+      .post('/follow-ups')
+      .set('Cookie', authCookies)
+      .send({
+        leadType: 'buyer',
+        buyerLeadId,
+        assigneeUserId,
+        dueAt: new Date(Date.now() + 4 * 3_600_000).toISOString(),
+        note: 'Alpha callback about financing',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/follow-ups')
+      .set('Cookie', authCookies)
+      .send({
+        leadType: 'buyer',
+        buyerLeadId,
+        assigneeUserId,
+        dueAt: new Date(Date.now() + 8 * 3_600_000).toISOString(),
+        note: 'Bravo showroom visit',
+      })
+      .expect(201);
+
+    const filteredFollowUps = await request(app.getHttpServer())
+      .get(`/follow-ups?status=Due&leadType=buyer&assigneeUserId=${assigneeUserId}&search=financing&page=1&pageSize=1`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(filteredFollowUps.body).toEqual(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 1,
+        total: 1,
+        totalPages: 1,
+      }),
+    );
+    expect(filteredFollowUps.body.followUps).toEqual([
+      expect.objectContaining({
+        leadType: 'buyer',
+        note: 'Alpha callback about financing',
+        status: 'Due',
+      }),
+    ]);
+  });
+
   it('completes a follow-up and prevents duplicate completion', async () => {
     const createResponse = await createBuyerLead(app, authCookies);
     const buyerLeadId = createResponse.body.buyerLead.id;

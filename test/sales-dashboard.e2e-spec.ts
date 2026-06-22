@@ -453,6 +453,138 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       }),
     );
   });
+
+  it('filters and paginates sales lists from backend query params', async () => {
+    const firstSale = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: linkedVehicleId,
+        buyerLeadId,
+        saleDate: '2026-06-01T09:30:00.000Z',
+        finalSaleAmount: '1280000.00',
+        agentName: 'Agent Cruz',
+      })
+      .expect(201);
+
+    const secondPair = await seedLinkedSalePair(db, userId, {
+      stockNumber: 'SALE-4001',
+      brand: 'Ford',
+      model: 'Everest',
+      year: 2024,
+      purchasePrice: '1500000.00',
+      targetSellingPrice: '1700000.00',
+      minimumAcceptablePrice: '1650000.00',
+      buyerName: 'Filter Buyer One',
+      buyerContactNumber: '09170000041',
+      buyerEmail: 'filter-buyer-one@example.com',
+    });
+
+    const secondSale = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: secondPair.vehicleId,
+        buyerLeadId: secondPair.buyerLeadId,
+        saleDate: '2026-06-15T10:00:00.000Z',
+        finalSaleAmount: '1690000.00',
+        agentName: 'Agent Mira',
+        commissionOverrideAmount: '8000.00',
+        commissionOverrideReason: 'Top closer bonus',
+      })
+      .expect(201);
+
+    const thirdPair = await seedLinkedSalePair(db, userId, {
+      stockNumber: 'SALE-4002',
+      brand: 'Nissan',
+      model: 'Terra',
+      year: 2023,
+      purchasePrice: '1400000.00',
+      targetSellingPrice: '1550000.00',
+      minimumAcceptablePrice: '1500000.00',
+      buyerName: 'Filter Buyer Two',
+      buyerContactNumber: '09170000042',
+      buyerEmail: 'filter-buyer-two@example.com',
+    });
+
+    const thirdSale = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: thirdPair.vehicleId,
+        buyerLeadId: thirdPair.buyerLeadId,
+        saleDate: '2026-05-01T12:00:00.000Z',
+        finalSaleAmount: '1540000.00',
+      })
+      .expect(201);
+
+    await db
+      .updateTable('sales.sales')
+      .set({
+        commission_locked: false,
+        updated_at: new Date(),
+      })
+      .where('id', '=', thirdSale.body.sale.id)
+      .execute();
+
+    const filteredSales = await request(app.getHttpServer())
+      .get('/sales?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=1&pageSize=1')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(filteredSales.body).toEqual(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 1,
+        total: 1,
+        totalPages: 1,
+      }),
+    );
+    expect(filteredSales.body.sales).toEqual([
+      expect.objectContaining({
+        id: secondSale.body.sale.id,
+        saleNumber: secondSale.body.sale.saleNumber,
+        agentName: 'Agent Mira',
+        commissionLocked: true,
+      }),
+    ]);
+
+    const needsReviewSales = await request(app.getHttpServer())
+      .get('/sales?status=needs_review&page=1&pageSize=5')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(needsReviewSales.body).toEqual(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 5,
+        total: 1,
+        totalPages: 1,
+      }),
+    );
+    expect(needsReviewSales.body.sales).toEqual([
+      expect.objectContaining({
+        id: thirdSale.body.sale.id,
+        commissionLocked: false,
+      }),
+    ]);
+
+    const paginatedAllSales = await request(app.getHttpServer())
+      .get('/sales?page=2&pageSize=1')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(paginatedAllSales.body.page).toBe(2);
+    expect(paginatedAllSales.body.pageSize).toBe(1);
+    expect(paginatedAllSales.body.total).toBe(3);
+    expect(paginatedAllSales.body.totalPages).toBe(3);
+    expect(paginatedAllSales.body.sales).toHaveLength(1);
+    expect(
+      [firstSale.body.sale.id, secondSale.body.sale.id, thirdSale.body.sale.id].includes(
+        paginatedAllSales.body.sales[0].id,
+      ),
+    ).toBe(true);
+  });
 });
 
 async function createSale(

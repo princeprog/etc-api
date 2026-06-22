@@ -5,9 +5,9 @@ import { Pool } from 'pg';
 
 import type { DB } from '../database/db.js';
 
-const SELLER_LEAD_COUNT = 10;
-const BUYER_LEAD_COUNT = 10;
-const VEHICLE_COUNT = 10;
+const SELLER_LEAD_COUNT = 20;
+const BUYER_LEAD_COUNT = 20;
+const VEHICLE_COUNT = 20;
 const RESET_FLAG = '--reset';
 
 async function seedDemoData() {
@@ -87,6 +87,16 @@ function buildSellerLeads(assigneeUserId: string | null, now: Date) {
     ['Lea Castillo', 'Hyundai', 'Accent', 2019, 'GLS AT', '438000.00', 'Carcar', 'Facebook'],
     ['Bryan Lim', 'Suzuki', 'Ertiga', 2022, 'GL AT', '698000.00', 'Consolacion', 'Marketplace'],
     ['Tina Gomez', 'Chevrolet', 'Trailblazer', 2020, 'LT AT', '818000.00', 'Cebu', 'Walk-in'],
+    ['Marco Villanueva', 'Kia', 'Soluto', 2021, 'EX AT', '498000.00', 'Naga', 'Facebook'],
+    ['Sheila Romero', 'Mazda', 'CX-5', 2020, '2.0 Pro', '1195000.00', 'Cebu', 'Referral'],
+    ['Victor Aquino', 'Toyota', 'Hilux', 2021, 'G 4x2 AT', '1285000.00', 'Mandaue', 'Marketplace'],
+    ['Anne Bautista', 'Honda', 'BR-V', 2022, 'S CVT', '848000.00', 'Liloan', 'Walk-in'],
+    ['Chris Delgado', 'Nissan', 'Almera', 2023, 'VL CVT', '655000.00', 'Talisay', 'Facebook'],
+    ['Patricia Yu', 'Ford', 'Everest', 2019, 'Titanium+', '1498000.00', 'Cebu', 'Referral'],
+    ['Rico Mercado', 'Mitsubishi', 'Mirage G4', 2020, 'GLS CVT', '465000.00', 'Danao', 'Marketplace'],
+    ['Samantha Chua', 'Suzuki', 'Dzire', 2021, 'GL+', '438000.00', 'Consolacion', 'Walk-in'],
+    ['Noel Fernandez', 'Hyundai', 'Stargazer', 2023, 'GLS Premium', '958000.00', 'Minglanilla', 'Facebook'],
+    ['Grace Serrano', 'Toyota', 'Innova', 2020, 'E Diesel AT', '1085000.00', 'Cebu', 'Referral'],
   ] as const;
 
   return samples.map(([sellerName, brand, model, year, variant, askingPrice, region, source], index) => ({
@@ -121,6 +131,16 @@ function buildBuyerLeads(assigneeUserId: string | null, now: Date) {
     ['Hazel Mendoza', '430000.00', 'Fuel efficient hatchback', 'Marketplace'],
     ['Ivan Co', '1100000.00', 'Mid-size pickup', 'Facebook'],
     ['Janelle Perez', '680000.00', 'City driving crossover', 'Walk-in'],
+    ['Kyle Soriano', '760000.00', 'Automatic crossover for daily commute', 'Referral'],
+    ['Liza Navarro', '590000.00', 'Reliable sedan for family use', 'Facebook'],
+    ['Marlon Go', '1450000.00', 'Pickup with strong resale value', 'Marketplace'],
+    ['Nica Velasco', '880000.00', '7-seater MPV with low mileage', 'Walk-in'],
+    ['Owen Tan', '510000.00', 'Entry-level automatic hatchback', 'Referral'],
+    ['Pam Reyes', '970000.00', 'SUV for provincial trips', 'Facebook'],
+    ['Quinn Dela Cruz', '1180000.00', '4x2 pickup for small business', 'Marketplace'],
+    ['Rhea Lim', '650000.00', 'Compact crossover with good fuel economy', 'Walk-in'],
+    ['Sean Flores', '1390000.00', 'Diesel SUV with third-row seating', 'Referral'],
+    ['Trisha Gomez', '470000.00', 'Budget-friendly city car', 'Facebook'],
   ] as const;
 
   return samples.map(([buyerName, desiredBudget, note, source], index) => ({
@@ -151,6 +171,16 @@ function buildVehicles(now: Date) {
     ['Hyundai', 'Accent', 2020, 'GLS', 'Red', 'Automatic', 'Gasoline', 40250, '395000.00', '455000.00', '430000.00', 'Incoming'],
     ['Isuzu', 'mu-X', 2021, 'LS-A', 'Titanium Silver', 'Automatic', 'Diesel', 21600, '1210000.00', '1365000.00', '1310000.00', 'Reserved'],
     ['Chevrolet', 'Trailblazer', 2019, 'LT', 'Summit White', 'Automatic', 'Diesel', 35500, '735000.00', '838000.00', '810000.00', 'Available'],
+    ['Kia', 'Soluto', 2022, 'EX AT', 'Aurora Black', 'Automatic', 'Gasoline', 11300, '445000.00', '518000.00', '495000.00', 'Incoming'],
+    ['Mazda', 'CX-5', 2021, '2.0 Pro', 'Soul Red', 'Automatic', 'Gasoline', 18500, '1135000.00', '1268000.00', '1225000.00', 'Available'],
+    ['Toyota', 'Hilux', 2020, 'G 4x2 AT', 'Silver Metallic', 'Automatic', 'Diesel', 27800, '1120000.00', '1265000.00', '1210000.00', 'Reserved'],
+    ['Honda', 'BR-V', 2023, 'S CVT', 'Taffeta White', 'CVT', 'Gasoline', 5400, '775000.00', '858000.00', '830000.00', 'Available'],
+    ['Nissan', 'Almera', 2024, 'VL CVT', 'Gun Metallic', 'CVT', 'Gasoline', 3100, '585000.00', '668000.00', '645000.00', 'Incoming'],
+    ['Ford', 'Everest', 2021, 'Titanium+', 'Meteor Grey', 'Automatic', 'Diesel', 22800, '1385000.00', '1555000.00', '1495000.00', 'Reconditioning'],
+    ['Mitsubishi', 'Mirage G4', 2022, 'GLS CVT', 'White Diamond', 'CVT', 'Gasoline', 9700, '418000.00', '485000.00', '462000.00', 'Available'],
+    ['Suzuki', 'Dzire', 2021, 'GL+', 'Bluish Black', 'Automatic', 'Gasoline', 14500, '398000.00', '452000.00', '435000.00', 'Incoming'],
+    ['Hyundai', 'Stargazer', 2023, 'GLS Premium', 'Silver', 'CVT', 'Gasoline', 6900, '835000.00', '948000.00', '918000.00', 'Available'],
+    ['Toyota', 'Innova', 2020, 'E Diesel AT', 'Attitude Black', 'Automatic', 'Diesel', 26400, '965000.00', '1098000.00', '1055000.00', 'Reserved'],
   ] as const;
 
   return samples.map(

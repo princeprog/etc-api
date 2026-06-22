@@ -5,13 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
 
+import {
+  buildPaginatedResponse,
+  normalizeSearch,
+  parsePagination,
+} from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import { mapVehicleResponse, parseVehicleStatus } from '../vehicles/vehicles.helpers';
 import { ConvertSellerLeadDto } from './dto/convert-seller-lead.dto';
 import { CreateSellerLeadDto } from './dto/create-seller-lead.dto';
+import { ListSellerLeadsQueryDto } from './dto/list-seller-leads-query.dto';
 import { UpdateSellerLeadDto } from './dto/update-seller-lead.dto';
 import { mapSellerLeadResponse, parseSellerLeadStatus } from './seller-leads.helpers';
 
@@ -53,20 +60,63 @@ export class SellerLeadsService {
     };
   }
 
-  async findAll() {
-    const sellerLeads = await this.db
-      .selectFrom('crm.seller_leads')
+  async findAll(query: ListSellerLeadsQueryDto = {}) {
+    const pagination = parsePagination(query);
+    const search = normalizeSearch(query.search);
+    const status = query.status
+      ? parseSellerLeadStatus(query.status, 'New Inquiry')
+      : undefined;
+    const sort = this.parseSort(query.sortBy, query.sortOrder);
+
+    let sellerLeadsQuery = this.db.selectFrom('crm.seller_leads');
+
+    if (status) {
+      sellerLeadsQuery = sellerLeadsQuery.where('status', '=', status);
+    }
+
+    if (search) {
+      const pattern = `%${search.toLowerCase()}%`;
+      sellerLeadsQuery = sellerLeadsQuery.where(({ eb, or }) =>
+        or([
+          eb(sql<string>`lower(seller_name)`, 'like', pattern),
+          eb(sql<string>`lower(contact_number)`, 'like', pattern),
+          eb(sql<string>`lower(vehicle_brand)`, 'like', pattern),
+          eb(sql<string>`lower(vehicle_model)`, 'like', pattern),
+          eb(sql<string>`lower(coalesce(vehicle_variant, ''))`, 'like', pattern),
+          eb(sql<string>`coalesce(vehicle_year::text, '')`, 'like', pattern),
+        ]),
+      );
+    }
+
+    const totalRow = await sellerLeadsQuery
+      .select(({ fn }) => fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+    const total = Number(totalRow.count);
+
+    const sellerLeads = await sellerLeadsQuery
       .selectAll()
-      .orderBy('created_at desc')
+      .orderBy(sort.column, sort.direction)
+      .offset(pagination.offset)
+      .limit(pagination.pageSize)
       .execute();
 
-    return {
-      sellerLeads: sellerLeads.map((lead) =>
+    const response = buildPaginatedResponse(
+      sellerLeads.map((lead) =>
         mapSellerLeadResponse({
           ...lead,
           status: parseSellerLeadStatus(lead.status, 'New Inquiry'),
         }),
       ),
+      pagination,
+      total,
+    );
+
+    return {
+      sellerLeads: response.items,
+      page: response.page,
+      pageSize: response.pageSize,
+      total: response.total,
+      totalPages: response.totalPages,
     };
   }
 
@@ -295,5 +345,35 @@ export class SellerLeadsService {
     }
 
     return trimmed;
+  }
+
+  private parseSort(sortBy?: string, sortOrder?: string) {
+    const direction = this.parseSortOrder(sortOrder);
+
+    switch (sortBy) {
+      case undefined:
+      case 'updatedAt':
+        return { column: 'updated_at' as const, direction };
+      case 'createdAt':
+        return { column: 'created_at' as const, direction };
+      case 'sellerName':
+        return { column: 'seller_name' as const, direction };
+      case 'status':
+        return { column: 'status' as const, direction };
+      default:
+        throw new BadRequestException(`Unsupported seller lead sort: ${sortBy}`);
+    }
+  }
+
+  private parseSortOrder(sortOrder?: string): 'asc' | 'desc' {
+    if (!sortOrder || sortOrder === 'desc') {
+      return 'desc';
+    }
+
+    if (sortOrder === 'asc') {
+      return 'asc';
+    }
+
+    throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
   }
 }
