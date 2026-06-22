@@ -36,11 +36,21 @@ export class SalesService {
     const vehicleId = requireTrimmed(dto.vehicleId, 'vehicleId');
     const buyerLeadId = requireTrimmed(dto.buyerLeadId, 'buyerLeadId');
     const saleDate = parseIsoDate(dto.saleDate, 'saleDate');
-    const finalSaleAmount = requireTrimmed(dto.finalSaleAmount, 'finalSaleAmount');
-    const finalSaleAmountCents = parseMoneyToCents(dto.finalSaleAmount, 'finalSaleAmount');
+    const finalSaleAmount = requireTrimmed(
+      dto.finalSaleAmount,
+      'finalSaleAmount',
+    );
+    const finalSaleAmountCents = parseMoneyToCents(
+      dto.finalSaleAmount,
+      'finalSaleAmount',
+    );
     const agentName = normalizeOptionalTrimmed(dto.agentName);
-    const overrideAmount = normalizeOptionalTrimmed(dto.commissionOverrideAmount);
-    const overrideReason = normalizeOptionalTrimmed(dto.commissionOverrideReason);
+    const overrideAmount = normalizeOptionalTrimmed(
+      dto.commissionOverrideAmount,
+    );
+    const overrideReason = normalizeOptionalTrimmed(
+      dto.commissionOverrideReason,
+    );
     const buyerClosingNote = normalizeOptionalTrimmed(dto.buyerClosingNote);
 
     if (overrideAmount && !overrideReason) {
@@ -64,7 +74,9 @@ export class SalesService {
         .executeTakeFirst();
 
       if (existingSale) {
-        throw new BadRequestException('Vehicle already has a finalized sale record');
+        throw new BadRequestException(
+          'Vehicle already has a finalized sale record',
+        );
       }
 
       const link = await trx
@@ -75,7 +87,9 @@ export class SalesService {
         .executeTakeFirst();
 
       if (!link) {
-        throw new BadRequestException('Buyer lead must be linked to the vehicle before finalizing a sale');
+        throw new BadRequestException(
+          'Buyer lead must be linked to the vehicle before finalizing a sale',
+        );
       }
 
       const closingNote = buyerClosingNote ?? buyerLead.closing_note;
@@ -90,14 +104,20 @@ export class SalesService {
         vehicle.purchase_price === null
           ? null
           : centsToMoney(
-              finalSaleAmountCents - parseMoneyToCents(vehicle.purchase_price, 'vehicle.purchasePrice'),
+              finalSaleAmountCents -
+                parseMoneyToCents(
+                  vehicle.purchase_price,
+                  'vehicle.purchasePrice',
+                ),
             );
 
       const saleNumber = await this.allocateSaleNumber(trx, saleDate);
 
-      const defaultCommissionAmount = agentName ? getDefaultCommissionAmount() : null;
+      const defaultCommissionAmount = agentName
+        ? getDefaultCommissionAmount()
+        : null;
       const finalCommissionAmount = agentName
-        ? overrideAmount ?? defaultCommissionAmount ?? '0.00'
+        ? (overrideAmount ?? defaultCommissionAmount ?? '0.00')
         : '0.00';
 
       const insertedSale = await trx
@@ -172,7 +192,9 @@ export class SalesService {
       .execute();
 
     return {
-      sales: await Promise.all(sales.map((sale) => this.getSaleOrThrow(sale.id))),
+      sales: await Promise.all(
+        sales.map((sale) => this.getSaleOrThrow(sale.id)),
+      ),
     };
   }
 
@@ -250,7 +272,9 @@ export class SalesService {
       return formatSaleNumber(saleYear, 1);
     }
 
-    const latestSequence = Number(latestSaleForYear.sale_number.split('-').at(-1) ?? '0');
+    const latestSequence = Number(
+      latestSaleForYear.sale_number.split('-').at(-1) ?? '0',
+    );
     return formatSaleNumber(saleYear, latestSequence + 1);
   }
 }

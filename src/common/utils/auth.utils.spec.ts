@@ -1,11 +1,20 @@
-import { durationToMs, hashPassword, parseRole, verifyPassword } from './auth.utils';
+import {
+  durationToMs,
+  hashPassword,
+  parseRole,
+  verifyPassword,
+} from './auth.utils';
 
 describe('auth utils', () => {
   it('hashes and verifies passwords', async () => {
     const passwordHash = await hashPassword('Password123!');
 
-    await expect(verifyPassword('Password123!', passwordHash)).resolves.toBe(true);
-    await expect(verifyPassword('wrong-password', passwordHash)).resolves.toBe(false);
+    await expect(verifyPassword('Password123!', passwordHash)).resolves.toBe(
+      true,
+    );
+    await expect(verifyPassword('wrong-password', passwordHash)).resolves.toBe(
+      false,
+    );
   });
 
   it('parses supported duration values', () => {

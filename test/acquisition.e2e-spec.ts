@@ -39,7 +39,10 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', '=', ADMIN_EMAIL).execute();
+    await db
+      .deleteFrom('auth.users')
+      .where('email', '=', ADMIN_EMAIL)
+      .execute();
 
     await db
       .insertInto('auth.users')
@@ -72,7 +75,10 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', '=', ADMIN_EMAIL).execute();
+    await db
+      .deleteFrom('auth.users')
+      .where('email', '=', ADMIN_EMAIL)
+      .execute();
     await app.close();
   });
 
@@ -291,7 +297,10 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
   });
 });
 
-async function createSellerLead(app: INestApplication<App>, authCookies: string[]) {
+async function createSellerLead(
+  app: INestApplication<App>,
+  authCookies: string[],
+) {
   return request(app.getHttpServer())
     .post('/seller-leads')
     .set('Cookie', authCookies)
@@ -309,8 +318,13 @@ async function createSellerLead(app: INestApplication<App>, authCookies: string[
     .expect(201);
 }
 
-function extractCookie(rawCookies: string[] | undefined, cookieName: string): string {
-  const cookie = rawCookies?.find((value) => value.startsWith(`${cookieName}=`));
+function extractCookie(
+  rawCookies: string[] | undefined,
+  cookieName: string,
+): string {
+  const cookie = rawCookies?.find((value) =>
+    value.startsWith(`${cookieName}=`),
+  );
 
   if (!cookie) {
     throw new Error(`Missing cookie ${cookieName}`);

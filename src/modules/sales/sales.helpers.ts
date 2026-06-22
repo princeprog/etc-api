@@ -6,7 +6,10 @@ export function getDefaultCommissionAmount() {
   return DEFAULT_COMMISSION_AMOUNT;
 }
 
-export function requireTrimmed(value: string | null | undefined, field: string) {
+export function requireTrimmed(
+  value: string | null | undefined,
+  field: string,
+) {
   const trimmed = value?.trim();
 
   if (!trimmed) {
@@ -35,7 +38,10 @@ export function parseIsoDate(value: string | undefined, field: string) {
   return parsed;
 }
 
-export function parseMoneyToCents(value: string | null | undefined, field: string) {
+export function parseMoneyToCents(
+  value: string | null | undefined,
+  field: string,
+) {
   const normalized = value?.trim();
 
   if (!normalized) {

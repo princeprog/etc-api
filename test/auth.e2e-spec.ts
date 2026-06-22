@@ -35,7 +35,10 @@ describe('Auth flows (e2e)', () => {
 
   beforeEach(async () => {
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL]).execute();
+    await db
+      .deleteFrom('auth.users')
+      .where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL])
+      .execute();
 
     const [adminPasswordHash, staffPasswordHash] = await Promise.all([
       hashPassword(PASSWORD),
@@ -63,7 +66,10 @@ describe('Auth flows (e2e)', () => {
 
   afterAll(async () => {
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL]).execute();
+    await db
+      .deleteFrom('auth.users')
+      .where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL])
+      .execute();
     await app.close();
   });
 
@@ -81,10 +87,22 @@ describe('Auth flows (e2e)', () => {
       })
       .expect(201);
 
-    const accessCookie = extractCookie(loginResponse.headers['set-cookie'], 'etc_access_token');
-    const refreshCookie = extractCookie(loginResponse.headers['set-cookie'], 'etc_refresh_token');
-    const rawAccessCookie = extractRawCookie(loginResponse.headers['set-cookie'], 'etc_access_token');
-    const rawRefreshCookie = extractRawCookie(loginResponse.headers['set-cookie'], 'etc_refresh_token');
+    const accessCookie = extractCookie(
+      loginResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const refreshCookie = extractCookie(
+      loginResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
+    const rawAccessCookie = extractRawCookie(
+      loginResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const rawRefreshCookie = extractRawCookie(
+      loginResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
 
     expect(rawAccessCookie).toContain('HttpOnly');
     expect(rawRefreshCookie).toContain('HttpOnly');
@@ -113,16 +131,28 @@ describe('Auth flows (e2e)', () => {
       })
       .expect(201);
 
-    const initialAccessCookie = extractCookie(loginResponse.headers['set-cookie'], 'etc_access_token');
-    const initialRefreshCookie = extractCookie(loginResponse.headers['set-cookie'], 'etc_refresh_token');
+    const initialAccessCookie = extractCookie(
+      loginResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const initialRefreshCookie = extractCookie(
+      loginResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
 
     const refreshResponse = await request(app.getHttpServer())
       .post('/auth/refresh')
       .set('Cookie', [initialRefreshCookie])
       .expect(201);
 
-    const rotatedAccessCookie = extractCookie(refreshResponse.headers['set-cookie'], 'etc_access_token');
-    const rotatedRefreshCookie = extractCookie(refreshResponse.headers['set-cookie'], 'etc_refresh_token');
+    const rotatedAccessCookie = extractCookie(
+      refreshResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const rotatedRefreshCookie = extractCookie(
+      refreshResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
 
     await request(app.getHttpServer())
       .get('/auth/me')
@@ -166,8 +196,14 @@ describe('Auth flows (e2e)', () => {
       })
       .expect(201);
 
-    const staffAccessCookie = extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_access_token');
-    const staffRefreshCookie = extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_refresh_token');
+    const staffAccessCookie = extractCookie(
+      staffLoginResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const staffRefreshCookie = extractCookie(
+      staffLoginResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
 
     await request(app.getHttpServer())
       .get('/auth/admin-check')
@@ -182,8 +218,14 @@ describe('Auth flows (e2e)', () => {
       })
       .expect(201);
 
-    const adminAccessCookie = extractCookie(adminLoginResponse.headers['set-cookie'], 'etc_access_token');
-    const adminRefreshCookie = extractCookie(adminLoginResponse.headers['set-cookie'], 'etc_refresh_token');
+    const adminAccessCookie = extractCookie(
+      adminLoginResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const adminRefreshCookie = extractCookie(
+      adminLoginResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
 
     await request(app.getHttpServer())
       .get('/auth/admin-check')
@@ -200,8 +242,14 @@ describe('Auth flows (e2e)', () => {
       })
       .expect(201);
 
-    const staffAccessCookie = extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_access_token');
-    const staffRefreshCookie = extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_refresh_token');
+    const staffAccessCookie = extractCookie(
+      staffLoginResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const staffRefreshCookie = extractCookie(
+      staffLoginResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
 
     await request(app.getHttpServer())
       .post('/auth/users')
@@ -222,8 +270,14 @@ describe('Auth flows (e2e)', () => {
       })
       .expect(201);
 
-    const adminAccessCookie = extractCookie(adminLoginResponse.headers['set-cookie'], 'etc_access_token');
-    const adminRefreshCookie = extractCookie(adminLoginResponse.headers['set-cookie'], 'etc_refresh_token');
+    const adminAccessCookie = extractCookie(
+      adminLoginResponse.headers['set-cookie'],
+      'etc_access_token',
+    );
+    const adminRefreshCookie = extractCookie(
+      adminLoginResponse.headers['set-cookie'],
+      'etc_refresh_token',
+    );
 
     const createResponse = await request(app.getHttpServer())
       .post('/auth/users')
@@ -258,13 +312,21 @@ describe('Auth flows (e2e)', () => {
   });
 });
 
-function extractCookie(rawCookies: string[] | undefined, cookieName: string): string {
+function extractCookie(
+  rawCookies: string[] | undefined,
+  cookieName: string,
+): string {
   const cookie = extractRawCookie(rawCookies, cookieName);
   return cookie.split(';')[0];
 }
 
-function extractRawCookie(rawCookies: string[] | undefined, cookieName: string): string {
-  const cookie = rawCookies?.find((value) => value.startsWith(`${cookieName}=`));
+function extractRawCookie(
+  rawCookies: string[] | undefined,
+  cookieName: string,
+): string {
+  const cookie = rawCookies?.find((value) =>
+    value.startsWith(`${cookieName}=`),
+  );
 
   if (!cookie) {
     throw new Error(`Missing cookie ${cookieName}`);

@@ -9,11 +9,17 @@ import type { Kysely } from 'kysely';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { VehiclesService } from '../vehicles/vehicles.service';
-import { mapVehicleResponse, parseVehicleStatus } from '../vehicles/vehicles.helpers';
+import {
+  mapVehicleResponse,
+  parseVehicleStatus,
+} from '../vehicles/vehicles.helpers';
 import { ConvertSellerLeadDto } from './dto/convert-seller-lead.dto';
 import { CreateSellerLeadDto } from './dto/create-seller-lead.dto';
 import { UpdateSellerLeadDto } from './dto/update-seller-lead.dto';
-import { mapSellerLeadResponse, parseSellerLeadStatus } from './seller-leads.helpers';
+import {
+  mapSellerLeadResponse,
+  parseSellerLeadStatus,
+} from './seller-leads.helpers';
 
 @Injectable()
 export class SellerLeadsService {
@@ -26,19 +32,34 @@ export class SellerLeadsService {
     const sellerLead = await this.db
       .insertInto('crm.seller_leads')
       .values({
-        seller_name: this.requireNonEmpty(createSellerLeadDto.sellerName, 'sellerName'),
-        contact_number: this.requireNonEmpty(createSellerLeadDto.contactNumber, 'contactNumber'),
+        seller_name: this.requireNonEmpty(
+          createSellerLeadDto.sellerName,
+          'sellerName',
+        ),
+        contact_number: this.requireNonEmpty(
+          createSellerLeadDto.contactNumber,
+          'contactNumber',
+        ),
         email: createSellerLeadDto.email ?? null,
         facebook_name: createSellerLeadDto.facebookName ?? null,
         inquiry_source: createSellerLeadDto.inquirySource ?? null,
-        vehicle_brand: this.requireNonEmpty(createSellerLeadDto.vehicleBrand, 'vehicleBrand'),
-        vehicle_model: this.requireNonEmpty(createSellerLeadDto.vehicleModel, 'vehicleModel'),
+        vehicle_brand: this.requireNonEmpty(
+          createSellerLeadDto.vehicleBrand,
+          'vehicleBrand',
+        ),
+        vehicle_model: this.requireNonEmpty(
+          createSellerLeadDto.vehicleModel,
+          'vehicleModel',
+        ),
         vehicle_year: createSellerLeadDto.vehicleYear ?? null,
         vehicle_variant: createSellerLeadDto.vehicleVariant ?? null,
         asking_price: createSellerLeadDto.askingPrice ?? null,
         region: createSellerLeadDto.region ?? null,
         notes: createSellerLeadDto.notes ?? null,
-        status: parseSellerLeadStatus(createSellerLeadDto.status, 'New Inquiry'),
+        status: parseSellerLeadStatus(
+          createSellerLeadDto.status,
+          'New Inquiry',
+        ),
         assignee_user_id: createSellerLeadDto.assigneeUserId ?? null,
         closing_note: createSellerLeadDto.closingNote ?? null,
       })
@@ -82,7 +103,12 @@ export class SellerLeadsService {
       .updateTable('crm.seller_leads')
       .set({
         ...(updateSellerLeadDto.sellerName !== undefined
-          ? { seller_name: this.requireNonEmpty(updateSellerLeadDto.sellerName, 'sellerName') }
+          ? {
+              seller_name: this.requireNonEmpty(
+                updateSellerLeadDto.sellerName,
+                'sellerName',
+              ),
+            }
           : {}),
         ...(updateSellerLeadDto.contactNumber !== undefined
           ? {
@@ -92,7 +118,9 @@ export class SellerLeadsService {
               ),
             }
           : {}),
-        ...(updateSellerLeadDto.email !== undefined ? { email: updateSellerLeadDto.email ?? null } : {}),
+        ...(updateSellerLeadDto.email !== undefined
+          ? { email: updateSellerLeadDto.email ?? null }
+          : {}),
         ...(updateSellerLeadDto.facebookName !== undefined
           ? { facebook_name: updateSellerLeadDto.facebookName ?? null }
           : {}),
@@ -100,10 +128,20 @@ export class SellerLeadsService {
           ? { inquiry_source: updateSellerLeadDto.inquirySource ?? null }
           : {}),
         ...(updateSellerLeadDto.vehicleBrand !== undefined
-          ? { vehicle_brand: this.requireNonEmpty(updateSellerLeadDto.vehicleBrand, 'vehicleBrand') }
+          ? {
+              vehicle_brand: this.requireNonEmpty(
+                updateSellerLeadDto.vehicleBrand,
+                'vehicleBrand',
+              ),
+            }
           : {}),
         ...(updateSellerLeadDto.vehicleModel !== undefined
-          ? { vehicle_model: this.requireNonEmpty(updateSellerLeadDto.vehicleModel, 'vehicleModel') }
+          ? {
+              vehicle_model: this.requireNonEmpty(
+                updateSellerLeadDto.vehicleModel,
+                'vehicleModel',
+              ),
+            }
           : {}),
         ...(updateSellerLeadDto.vehicleYear !== undefined
           ? { vehicle_year: updateSellerLeadDto.vehicleYear ?? null }
@@ -114,10 +152,19 @@ export class SellerLeadsService {
         ...(updateSellerLeadDto.askingPrice !== undefined
           ? { asking_price: updateSellerLeadDto.askingPrice ?? null }
           : {}),
-        ...(updateSellerLeadDto.region !== undefined ? { region: updateSellerLeadDto.region ?? null } : {}),
-        ...(updateSellerLeadDto.notes !== undefined ? { notes: updateSellerLeadDto.notes ?? null } : {}),
+        ...(updateSellerLeadDto.region !== undefined
+          ? { region: updateSellerLeadDto.region ?? null }
+          : {}),
+        ...(updateSellerLeadDto.notes !== undefined
+          ? { notes: updateSellerLeadDto.notes ?? null }
+          : {}),
         ...(updateSellerLeadDto.status !== undefined
-          ? { status: parseSellerLeadStatus(updateSellerLeadDto.status, 'New Inquiry') }
+          ? {
+              status: parseSellerLeadStatus(
+                updateSellerLeadDto.status,
+                'New Inquiry',
+              ),
+            }
           : {}),
         ...(updateSellerLeadDto.assigneeUserId !== undefined
           ? { assignee_user_id: updateSellerLeadDto.assigneeUserId ?? null }
@@ -153,15 +200,21 @@ export class SellerLeadsService {
         .executeTakeFirst();
 
       if (existingVehicle) {
-        throw new BadRequestException('Seller lead has already been converted into a vehicle');
+        throw new BadRequestException(
+          'Seller lead has already been converted into a vehicle',
+        );
       }
 
       if (sellerLead.status === 'Rejected') {
-        throw new BadRequestException('Rejected seller leads cannot be converted');
+        throw new BadRequestException(
+          'Rejected seller leads cannot be converted',
+        );
       }
 
       if (sellerLead.status === 'Purchased') {
-        throw new BadRequestException('Purchased seller leads cannot be converted again');
+        throw new BadRequestException(
+          'Purchased seller leads cannot be converted again',
+        );
       }
 
       const vehicleModel = this.vehiclesService.buildVehicleCreateModel({
@@ -176,10 +229,12 @@ export class SellerLeadsService {
         region: convertSellerLeadDto.region ?? sellerLead.region,
         features: convertSellerLeadDto.features,
         remarks: convertSellerLeadDto.remarks,
-        purchasePrice: convertSellerLeadDto.purchasePrice ?? sellerLead.asking_price,
+        purchasePrice:
+          convertSellerLeadDto.purchasePrice ?? sellerLead.asking_price,
         targetSellingPrice: convertSellerLeadDto.targetSellingPrice,
         minimumAcceptablePrice: convertSellerLeadDto.minimumAcceptablePrice,
-        acquisitionSource: convertSellerLeadDto.acquisitionSource ?? sellerLead.inquiry_source,
+        acquisitionSource:
+          convertSellerLeadDto.acquisitionSource ?? sellerLead.inquiry_source,
         sellerLeadId: sellerLead.id,
         status: convertSellerLeadDto.status ?? 'Incoming',
         photos: convertSellerLeadDto.photos,

@@ -12,7 +12,17 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, BuyerLeadsModule, SellerLeadsModule, VehiclesModule, FollowUpsModule, SalesModule, DashboardModule, UploadsModule],
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    BuyerLeadsModule,
+    SellerLeadsModule,
+    VehiclesModule,
+    FollowUpsModule,
+    SalesModule,
+    DashboardModule,
+    UploadsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

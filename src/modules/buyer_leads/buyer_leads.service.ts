@@ -8,7 +8,10 @@ import type { Kysely } from 'kysely';
 
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
-import { mapBuyerLeadResponse, parseBuyerLeadStatus } from './buyer_leads.helpers';
+import {
+  mapBuyerLeadResponse,
+  parseBuyerLeadStatus,
+} from './buyer_leads.helpers';
 import { CreateBuyerLeadDto } from './dto/create-buyer_lead.dto';
 import { LinkBuyerLeadVehicleDto } from './dto/link-buyer-lead-vehicle.dto';
 import { UpdateBuyerLeadDto } from './dto/update-buyer_lead.dto';
@@ -21,8 +24,14 @@ export class BuyerLeadsService {
     const insertedLead = await this.db
       .insertInto('crm.buyer_leads')
       .values({
-        buyer_name: this.requireNonEmpty(createBuyerLeadDto.buyerName, 'buyerName'),
-        contact_number: this.requireNonEmpty(createBuyerLeadDto.contactNumber, 'contactNumber'),
+        buyer_name: this.requireNonEmpty(
+          createBuyerLeadDto.buyerName,
+          'buyerName',
+        ),
+        contact_number: this.requireNonEmpty(
+          createBuyerLeadDto.contactNumber,
+          'contactNumber',
+        ),
         email: createBuyerLeadDto.email ?? null,
         facebook_name: createBuyerLeadDto.facebookName ?? null,
         inquiry_source: createBuyerLeadDto.inquirySource ?? null,
@@ -46,7 +55,9 @@ export class BuyerLeadsService {
       .execute();
 
     return {
-      buyerLeads: await Promise.all(buyerLeads.map((lead) => this.getBuyerLeadOrThrow(lead.id))),
+      buyerLeads: await Promise.all(
+        buyerLeads.map((lead) => this.getBuyerLeadOrThrow(lead.id)),
+      ),
     };
   }
 
@@ -62,7 +73,7 @@ export class BuyerLeadsService {
 
     const nextAssigneeUserId =
       updateBuyerLeadDto.assigneeUserId !== undefined
-        ? updateBuyerLeadDto.assigneeUserId ?? null
+        ? (updateBuyerLeadDto.assigneeUserId ?? null)
         : existingLead.assignee_user_id;
     const nextBuyerName =
       updateBuyerLeadDto.buyerName !== undefined
@@ -70,11 +81,14 @@ export class BuyerLeadsService {
         : existingLead.buyer_name;
     const nextContactNumber =
       updateBuyerLeadDto.contactNumber !== undefined
-        ? this.requireNonEmpty(updateBuyerLeadDto.contactNumber, 'contactNumber')
+        ? this.requireNonEmpty(
+            updateBuyerLeadDto.contactNumber,
+            'contactNumber',
+          )
         : existingLead.contact_number;
     const nextClosingNote =
       updateBuyerLeadDto.closingNote !== undefined
-        ? updateBuyerLeadDto.closingNote ?? null
+        ? (updateBuyerLeadDto.closingNote ?? null)
         : existingLead.closing_note;
 
     if (nextStatus !== 'New Inquiry') {
@@ -85,8 +99,13 @@ export class BuyerLeadsService {
       }
     }
 
-    if ((nextStatus === 'Won' || nextStatus === 'Lost') && !nextClosingNote?.trim()) {
-      throw new BadRequestException('closingNote is required for Won and Lost buyer leads');
+    if (
+      (nextStatus === 'Won' || nextStatus === 'Lost') &&
+      !nextClosingNote?.trim()
+    ) {
+      throw new BadRequestException(
+        'closingNote is required for Won and Lost buyer leads',
+      );
     }
 
     if (nextStatus === 'Reserved') {
@@ -106,11 +125,15 @@ export class BuyerLeadsService {
     await this.db
       .updateTable('crm.buyer_leads')
       .set({
-        ...(updateBuyerLeadDto.buyerName !== undefined ? { buyer_name: nextBuyerName } : {}),
+        ...(updateBuyerLeadDto.buyerName !== undefined
+          ? { buyer_name: nextBuyerName }
+          : {}),
         ...(updateBuyerLeadDto.contactNumber !== undefined
           ? { contact_number: nextContactNumber }
           : {}),
-        ...(updateBuyerLeadDto.email !== undefined ? { email: updateBuyerLeadDto.email ?? null } : {}),
+        ...(updateBuyerLeadDto.email !== undefined
+          ? { email: updateBuyerLeadDto.email ?? null }
+          : {}),
         ...(updateBuyerLeadDto.facebookName !== undefined
           ? { facebook_name: updateBuyerLeadDto.facebookName ?? null }
           : {}),
@@ -120,12 +143,18 @@ export class BuyerLeadsService {
         ...(updateBuyerLeadDto.desiredBudget !== undefined
           ? { desired_budget: updateBuyerLeadDto.desiredBudget ?? null }
           : {}),
-        ...(updateBuyerLeadDto.notes !== undefined ? { notes: updateBuyerLeadDto.notes ?? null } : {}),
-        ...(updateBuyerLeadDto.status !== undefined ? { status: nextStatus } : {}),
+        ...(updateBuyerLeadDto.notes !== undefined
+          ? { notes: updateBuyerLeadDto.notes ?? null }
+          : {}),
+        ...(updateBuyerLeadDto.status !== undefined
+          ? { status: nextStatus }
+          : {}),
         ...(updateBuyerLeadDto.assigneeUserId !== undefined
           ? { assignee_user_id: nextAssigneeUserId }
           : {}),
-        ...(updateBuyerLeadDto.closingNote !== undefined ? { closing_note: nextClosingNote } : {}),
+        ...(updateBuyerLeadDto.closingNote !== undefined
+          ? { closing_note: nextClosingNote }
+          : {}),
         latest_activity_at: new Date(),
         updated_at: new Date(),
       })
@@ -156,7 +185,9 @@ export class BuyerLeadsService {
       .executeTakeFirst();
 
     if (existingLink) {
-      throw new BadRequestException('Vehicle is already linked to this buyer lead');
+      throw new BadRequestException(
+        'Vehicle is already linked to this buyer lead',
+      );
     }
 
     await this.db
@@ -180,7 +211,9 @@ export class BuyerLeadsService {
       .executeTakeFirst();
 
     if (!deleted.numDeletedRows || Number(deleted.numDeletedRows) === 0) {
-      throw new NotFoundException(`Vehicle ${vehicleId} is not linked to buyer lead ${id}`);
+      throw new NotFoundException(
+        `Vehicle ${vehicleId} is not linked to buyer lead ${id}`,
+      );
     }
 
     return { buyerLead: await this.getBuyerLeadOrThrow(id) };

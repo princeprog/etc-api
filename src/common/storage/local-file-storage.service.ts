@@ -3,7 +3,11 @@ import { randomUUID } from 'crypto';
 import { mkdir, unlink, writeFile } from 'fs/promises';
 import { extname, join } from 'path';
 
-import type { FileStorage, FileStorageSaveInput, StoredFile } from './storage.types';
+import type {
+  FileStorage,
+  FileStorageSaveInput,
+  StoredFile,
+} from './storage.types';
 
 const MIME_TYPE_TO_EXTENSION: Record<string, string> = {
   'image/jpeg': '.jpg',

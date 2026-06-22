@@ -10,17 +10,26 @@ export class DashboardService {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
 
   async getDashboard() {
-    const [availableVehicles, reservedVehicles, soldVehicles] = await Promise.all([
-      this.countVehiclesByStatus('Available'),
-      this.countVehiclesByStatus('Reserved'),
-      this.countVehiclesByStatus('Sold'),
-    ]);
+    const [availableVehicles, reservedVehicles, soldVehicles] =
+      await Promise.all([
+        this.countVehiclesByStatus('Available'),
+        this.countVehiclesByStatus('Reserved'),
+        this.countVehiclesByStatus('Sold'),
+      ]);
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const tomorrowStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
 
     const monthlySales = await this.db
       .selectFrom('sales.sales')
@@ -119,7 +128,9 @@ export class DashboardService {
     };
   }
 
-  private async countVehiclesByStatus(status: 'Available' | 'Reserved' | 'Sold') {
+  private async countVehiclesByStatus(
+    status: 'Available' | 'Reserved' | 'Sold',
+  ) {
     const result = await this.db
       .selectFrom('inventory.vehicles')
       .select(({ fn }) => fn.count<string>('id').as('count'))

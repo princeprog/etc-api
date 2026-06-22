@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { BuyerLeadsService } from './buyer_leads.service';
@@ -27,7 +36,10 @@ export class BuyerLeadsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateBuyerLeadDto: UpdateBuyerLeadDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateBuyerLeadDto: UpdateBuyerLeadDto,
+  ) {
     return this.buyerLeadsService.update(id, updateBuyerLeadDto);
   }
 
@@ -37,7 +49,10 @@ export class BuyerLeadsController {
   }
 
   @Delete(':id/vehicle-links/:vehicleId')
-  unlinkVehicle(@Param('id') id: string, @Param('vehicleId') vehicleId: string) {
+  unlinkVehicle(
+    @Param('id') id: string,
+    @Param('vehicleId') vehicleId: string,
+  ) {
     return this.buyerLeadsService.unlinkVehicle(id, vehicleId);
   }
 }
