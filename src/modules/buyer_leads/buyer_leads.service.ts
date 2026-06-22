@@ -49,12 +49,17 @@ export class BuyerLeadsService {
     const pagination = parsePagination(query);
     const search = normalizeSearch(query.search);
     const status = query.status ? parseBuyerLeadStatus(query.status, 'New Inquiry') : undefined;
+    const eligibleForSale = this.parseBooleanQuery(query.eligibleForSale);
     const sort = this.parseSort(query.sortBy, query.sortOrder);
 
     let buyerLeadsQuery = this.db.selectFrom('crm.buyer_leads');
 
     if (status) {
       buyerLeadsQuery = buyerLeadsQuery.where('status', '=', status);
+    }
+
+    if (eligibleForSale) {
+      buyerLeadsQuery = buyerLeadsQuery.where('status', '!=', 'Won');
     }
 
     if (search) {
@@ -369,6 +374,18 @@ export class BuyerLeadsService {
     }
 
     throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
+  }
+
+  private parseBooleanQuery(value?: boolean | string) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return false;
+    }
+
+    return value.toLowerCase() === 'true';
   }
 }
 

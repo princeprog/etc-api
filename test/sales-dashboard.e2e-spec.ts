@@ -283,6 +283,29 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .expect(400);
   });
 
+  it('rejects creating a sale for a buyer lead that is already won', async () => {
+    await db
+      .updateTable('crm.buyer_leads')
+      .set({
+        status: 'Won',
+        closing_note: 'Already closed.',
+        updated_at: new Date(),
+      })
+      .where('id', '=', buyerLeadId)
+      .execute();
+
+    await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: linkedVehicleId,
+        buyerLeadId,
+        saleDate: new Date().toISOString(),
+        finalSaleAmount: '1275000.00',
+      })
+      .expect(400);
+  });
+
   it('rejects creating a sale for an unlinked buyer lead and vehicle pair', async () => {
     await request(app.getHttpServer())
       .post('/sales')

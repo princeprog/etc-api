@@ -35,6 +35,8 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
   });
 
   beforeEach(async () => {
+    await db.deleteFrom('sales.commissions').execute();
+    await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('crm.follow_ups').execute();
     await db.deleteFrom('crm.lead_vehicle_links').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
@@ -101,6 +103,8 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
   });
 
   afterAll(async () => {
+    await db.deleteFrom('sales.commissions').execute();
+    await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('crm.follow_ups').execute();
     await db.deleteFrom('crm.lead_vehicle_links').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
@@ -430,6 +434,55 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         status: 'Due',
       }),
     ]);
+  });
+
+  it('excludes won buyer leads when eligibleForSale is requested', async () => {
+    const assigneeUserId = await currentUserId(app);
+
+    await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Eligible Buyer',
+        contactNumber: '09170010101',
+        status: 'Interested',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Won Buyer',
+        contactNumber: '09170010102',
+        status: 'Won',
+        assigneeUserId,
+        closingNote: 'Sale already completed.',
+      })
+      .expect(201);
+
+    const response = await request(app.getHttpServer())
+      .get('/buyer-leads?eligibleForSale=true&search=buyer')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(response.body.buyerLeads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          buyerName: 'Eligible Buyer',
+          status: 'Interested',
+        }),
+      ]),
+    );
+    expect(response.body.buyerLeads).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          buyerName: 'Won Buyer',
+          status: 'Won',
+        }),
+      ]),
+    );
   });
 
   it('completes a follow-up and prevents duplicate completion', async () => {

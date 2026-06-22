@@ -3,6 +3,7 @@ export class ListBuyerLeadsQueryDto {
   pageSize?: number | string;
   search?: string;
   status?: string;
+  eligibleForSale?: boolean | string;
   sortBy?: string;
   sortOrder?: string;
 }

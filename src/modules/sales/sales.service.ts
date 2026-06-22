@@ -63,6 +63,10 @@ export class SalesService {
         throw new BadRequestException('Vehicle is already sold');
       }
 
+      if (buyerLead.status === 'Won') {
+        throw new BadRequestException('Buyer lead is already won and cannot be used for a new sale');
+      }
+
       const existingSale = await trx
         .selectFrom('sales.sales')
         .select(['id'])
