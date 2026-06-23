@@ -14,6 +14,7 @@ import {
 } from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
+import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
@@ -37,6 +38,7 @@ export class SalesService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly vehiclesService: VehiclesService,
+    private readonly activityHistoryService: ActivityHistoryService,
   ) {}
 
   async create(user: CurrentUser, dto: CreateSaleDto) {
@@ -182,6 +184,72 @@ export class SalesService {
         })
         .where('id', '=', buyerLeadId)
         .execute();
+
+      await this.activityHistoryService.write(
+        {
+          actor: user,
+          entityType: 'sale',
+          entityId: insertedSale.id,
+          actionType: 'sale.finalized',
+          summary: `Sale ${saleNumber} finalized`,
+          metadata: {
+            vehicleId,
+            buyerLeadId,
+            saleNumber,
+            finalSaleAmount,
+          },
+        },
+        trx,
+      );
+
+      await this.activityHistoryService.write(
+        {
+          actor: user,
+          entityType: 'vehicle',
+          entityId: vehicleId,
+          actionType: 'vehicle.sold',
+          summary: `Vehicle marked sold through sale ${saleNumber}`,
+          metadata: {
+            saleId: insertedSale.id,
+            saleNumber,
+            finalSaleAmount,
+          },
+        },
+        trx,
+      );
+
+      await this.activityHistoryService.write(
+        {
+          actor: user,
+          entityType: 'buyer_lead',
+          entityId: buyerLeadId,
+          actionType: 'buyer_lead.sale_finalized',
+          summary: `Buyer lead won through sale ${saleNumber}`,
+          metadata: {
+            saleId: insertedSale.id,
+            saleNumber,
+            vehicleId,
+          },
+        },
+        trx,
+      );
+
+      if (overrideAmount) {
+        await this.activityHistoryService.write(
+          {
+            actor: user,
+            entityType: 'sale',
+            entityId: insertedSale.id,
+            actionType: 'sale.commission_override_used',
+            summary: 'Commission override applied to finalized sale',
+            metadata: {
+              overrideAmount,
+              overrideReason,
+            },
+          },
+          trx,
+        );
+      }
 
       return {
         sale: insertedSale,

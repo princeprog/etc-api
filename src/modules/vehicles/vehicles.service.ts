@@ -7,10 +7,12 @@ import {
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
+import type { CurrentUser } from '../../common/types/auth.types';
 import { LocalFileStorageService } from '../../common/storage/local-file-storage.service';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { VehicleStatus } from '../../database/schema';
+import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
@@ -36,9 +38,10 @@ export class VehiclesService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly localFileStorageService: LocalFileStorageService,
+    private readonly activityHistoryService: ActivityHistoryService,
   ) {}
 
-  async create(createVehicleDto: CreateVehicleDto) {
+  async create(user: CurrentUser, createVehicleDto: CreateVehicleDto) {
     const model = this.buildVehicleCreateModel({
       brand: createVehicleDto.brand,
       model: createVehicleDto.model,
@@ -88,6 +91,21 @@ export class VehiclesService {
         .executeTakeFirstOrThrow();
 
       await this.replacePhotos(trx, insertedVehicle.id, model.photos);
+      await this.activityHistoryService.write(
+        {
+          actor: user,
+          entityType: 'vehicle',
+          entityId: insertedVehicle.id,
+          actionType: 'vehicle.created',
+          summary: 'Vehicle created',
+          metadata: {
+            stockNumber,
+            status: model.status,
+            sellerLeadId: model.sellerLeadId,
+          },
+        },
+        trx,
+      );
       return this.getVehicleOrThrow(insertedVehicle.id, trx);
     });
 
@@ -120,7 +138,7 @@ export class VehiclesService {
     return { vehicle };
   }
 
-  async update(id: string, updateVehicleDto: UpdateVehicleDto) {
+  async update(user: CurrentUser, id: string, updateVehicleDto: UpdateVehicleDto) {
     const existingVehicle = await this.db
       .selectFrom('inventory.vehicles')
       .selectAll()
@@ -199,6 +217,8 @@ export class VehiclesService {
       if (updateVehicleDto.photos) {
         await this.replacePhotos(trx, id, model.photos);
       }
+
+      await this.writeUpdateActivity(user, existingVehicle, model, trx);
 
       return this.getVehicleOrThrow(id, trx);
     });
@@ -489,4 +509,92 @@ export class VehiclesService {
       .map((photo) => photo.fileUrl)
       .filter((fileUrl) => !nextPhotoPaths.has(fileUrl));
   }
+
+  private async writeUpdateActivity(
+    user: CurrentUser,
+    previous: {
+      id: string;
+      status: string;
+      stock_number: string;
+      target_selling_price: string | null;
+      minimum_acceptable_price: string | null;
+      purchase_price: string | null;
+      brand: string;
+      model: string;
+      remarks: string | null;
+      features: string | null;
+    },
+    next: VehicleWriteModel,
+    trx: Transaction<DB>,
+  ) {
+    const events: WriteActivityEvent[] = [];
+
+    if (previous.status !== next.status) {
+      events.push({
+        actionType: 'vehicle.status_changed',
+        summary: `Vehicle status changed from ${previous.status} to ${next.status}`,
+        metadata: { from: previous.status, to: next.status },
+      });
+    }
+
+    if (
+      previous.target_selling_price !== next.targetSellingPrice ||
+      previous.minimum_acceptable_price !== next.minimumAcceptablePrice ||
+      previous.purchase_price !== next.purchasePrice
+    ) {
+      events.push({
+        actionType: 'vehicle.pricing_updated',
+        summary: 'Vehicle pricing updated',
+        metadata: {
+          changedFields: [
+            previous.purchase_price !== next.purchasePrice ? 'purchasePrice' : null,
+            previous.target_selling_price !== next.targetSellingPrice ? 'targetSellingPrice' : null,
+            previous.minimum_acceptable_price !== next.minimumAcceptablePrice ? 'minimumAcceptablePrice' : null,
+          ].filter(Boolean),
+        },
+      });
+    }
+
+    if (
+      previous.brand !== next.brand ||
+      previous.model !== next.model ||
+      previous.remarks !== next.remarks ||
+      previous.features !== next.features
+    ) {
+      events.push({
+        actionType: 'vehicle.details_updated',
+        summary: 'Vehicle merchandising details updated',
+        metadata: {
+          changedFields: [
+            previous.brand !== next.brand ? 'brand' : null,
+            previous.model !== next.model ? 'model' : null,
+            previous.remarks !== next.remarks ? 'remarks' : null,
+            previous.features !== next.features ? 'features' : null,
+          ].filter(Boolean),
+        },
+      });
+    }
+
+    await Promise.all(
+      events.map((event) =>
+        this.activityHistoryService.write(
+          {
+            actor: user,
+            entityType: 'vehicle',
+            entityId: previous.id,
+            actionType: event.actionType,
+            summary: event.summary,
+            metadata: event.metadata,
+          },
+          trx,
+        ),
+      ),
+    );
+  }
+}
+
+interface WriteActivityEvent {
+  actionType: string;
+  summary: string;
+  metadata: Record<string, unknown>;
 }

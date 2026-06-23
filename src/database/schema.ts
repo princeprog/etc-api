@@ -240,6 +240,18 @@ export interface CommissionsTable {
   updated_at: Generated<Date>;
 }
 
+export interface ActivityHistoryTable {
+  id: Generated<string>;
+  actor_user_id: string | null;
+  actor_display_name: string | null;
+  entity_type: ActivityEntityType;
+  entity_id: string;
+  action_type: string;
+  summary: string;
+  metadata: Record<string, unknown> | null;
+  created_at: Generated<Date>;
+}
+
 export interface DB {
   'authentication.users': UsersTable;
   'authentication.sessions': SessionsTable;
@@ -254,6 +266,7 @@ export interface DB {
   'crm.follow_ups': FollowUpsTable;
   'sales.sales': SalesTable;
   'sales.commissions': CommissionsTable;
+  'ops.activity_history': ActivityHistoryTable;
 }
 
 export type User = Selectable<UsersTable>;

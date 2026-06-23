@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { CurrentUser as AuthUser } from '../../common/types/auth.types';
 import { BuyerLeadsService } from './buyer_leads.service';
 import { CreateBuyerLeadDto } from './dto/create-buyer_lead.dto';
 import { ListBuyerLeadsQueryDto } from './dto/list-buyer-leads-query.dto';
@@ -13,8 +15,8 @@ export class BuyerLeadsController {
   constructor(private readonly buyerLeadsService: BuyerLeadsService) {}
 
   @Post()
-  create(@Body() createBuyerLeadDto: CreateBuyerLeadDto) {
-    return this.buyerLeadsService.create(createBuyerLeadDto);
+  create(@CurrentUser() user: AuthUser, @Body() createBuyerLeadDto: CreateBuyerLeadDto) {
+    return this.buyerLeadsService.create(user, createBuyerLeadDto);
   }
 
   @Get()
@@ -29,22 +31,28 @@ export class BuyerLeadsController {
 
   @Patch(':id')
   update(
+    @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() updateBuyerLeadDto: UpdateBuyerLeadDto,
   ) {
-    return this.buyerLeadsService.update(id, updateBuyerLeadDto);
+    return this.buyerLeadsService.update(user, id, updateBuyerLeadDto);
   }
 
   @Post(':id/vehicle-links')
-  linkVehicle(@Param('id') id: string, @Body() dto: LinkBuyerLeadVehicleDto) {
-    return this.buyerLeadsService.linkVehicle(id, dto);
+  linkVehicle(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: LinkBuyerLeadVehicleDto,
+  ) {
+    return this.buyerLeadsService.linkVehicle(user, id, dto);
   }
 
   @Delete(':id/vehicle-links/:vehicleId')
   unlinkVehicle(
+    @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Param('vehicleId') vehicleId: string,
   ) {
-    return this.buyerLeadsService.unlinkVehicle(id, vehicleId);
+    return this.buyerLeadsService.unlinkVehicle(user, id, vehicleId);
   }
 }

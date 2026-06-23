@@ -14,12 +14,13 @@ import {
   parsePagination,
 } from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
-import type { DB } from '../../database/schema';
+import type { DB } from '../../database/db';
+import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { VehiclesService } from '../vehicles/vehicles.service';
 import {
   mapVehicleResponse,
   parseVehicleStatus,
 } from '../vehicles/vehicles.helpers';
-import { VehiclesService } from '../vehicles/vehicles.service';
 import { ConvertSellerLeadDto } from './dto/convert-seller-lead.dto';
 import { CreateSellerLeadDto } from './dto/create-seller-lead.dto';
 import { ListSellerLeadsQueryDto } from './dto/list-seller-leads-query.dto';
@@ -44,9 +45,10 @@ export class SellerLeadsService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly vehiclesService: VehiclesService,
+    private readonly activityHistoryService: ActivityHistoryService,
   ) {}
 
-  async create(createSellerLeadDto: CreateSellerLeadDto) {
+  async create(user: CurrentUser, createSellerLeadDto: CreateSellerLeadDto) {
     const sellerLead = await this.db
       .insertInto('crm.seller_leads')
       .values({
@@ -99,6 +101,20 @@ export class SellerLeadsService {
       })
       .returningAll()
       .executeTakeFirstOrThrow();
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'seller_lead',
+      entityId: sellerLead.id,
+      actionType: 'seller_lead.created',
+      summary: 'Seller lead created',
+      metadata: {
+        sellerName: sellerLead.seller_name,
+        vehicleBrand: sellerLead.vehicle_brand,
+        vehicleModel: sellerLead.vehicle_model,
+        status: sellerLead.status,
+      },
+    });
 
     return {
       sellerLead: await this.buildSellerLeadResponse({
@@ -193,6 +209,11 @@ export class SellerLeadsService {
     if (existingLead.status === 'Rejected' && nextStatus === 'Approved to Buy') {
       throw new BadRequestException('Rejected seller leads cannot be approved');
     }
+
+    const nextAssigneeUserId =
+      updateSellerLeadDto.assigneeUserId !== undefined
+        ? updateSellerLeadDto.assigneeUserId ?? null
+        : existingLead.assignee_user_id;
 
     await this.db
       .updateTable('crm.seller_leads')
@@ -313,7 +334,7 @@ export class SellerLeadsService {
             }
           : {}),
         ...(updateSellerLeadDto.assigneeUserId !== undefined
-          ? { assignee_user_id: updateSellerLeadDto.assigneeUserId ?? null }
+          ? { assignee_user_id: nextAssigneeUserId }
           : {}),
         ...(updateSellerLeadDto.closingNote !== undefined
           ? { closing_note: updateSellerLeadDto.closingNote ?? null }
@@ -322,6 +343,28 @@ export class SellerLeadsService {
       })
       .where('id', '=', id)
       .execute();
+
+    await this.writeUpdateActivity(currentUser, existingLead, {
+      status: nextStatus,
+      assignee_user_id: nextAssigneeUserId,
+      seller_name:
+        updateSellerLeadDto.sellerName !== undefined
+          ? this.requireNonEmpty(updateSellerLeadDto.sellerName, 'sellerName')
+          : existingLead.seller_name,
+      vehicle_brand:
+        updateSellerLeadDto.vehicleBrand !== undefined
+          ? this.requireNonEmpty(updateSellerLeadDto.vehicleBrand, 'vehicleBrand')
+          : existingLead.vehicle_brand,
+      vehicle_model:
+        updateSellerLeadDto.vehicleModel !== undefined
+          ? this.requireNonEmpty(updateSellerLeadDto.vehicleModel, 'vehicleModel')
+          : existingLead.vehicle_model,
+      asking_price:
+        updateSellerLeadDto.askingPrice !== undefined
+          ? updateSellerLeadDto.askingPrice ?? null
+          : existingLead.asking_price,
+      notes: updateSellerLeadDto.notes !== undefined ? updateSellerLeadDto.notes ?? null : existingLead.notes,
+    });
 
     const sellerLead = await this.getLeadRecordOrThrow(id);
     return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
@@ -358,7 +401,7 @@ export class SellerLeadsService {
     return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
   }
 
-  async convert(id: string, convertSellerLeadDto: ConvertSellerLeadDto) {
+  async convert(user: CurrentUser, id: string, convertSellerLeadDto: ConvertSellerLeadDto) {
     return this.db.transaction().execute(async (trx) => {
       const sellerLead = await this.getLeadRecordOrThrow(id, trx);
 
@@ -468,6 +511,37 @@ export class SellerLeadsService {
         .where('id', '=', id)
         .execute();
 
+      await this.activityHistoryService.write(
+        {
+          actor: user,
+          entityType: 'seller_lead',
+          entityId: id,
+          actionType: 'seller_lead.converted_to_vehicle',
+          summary: 'Seller lead converted into a vehicle record',
+          metadata: {
+            vehicleId: insertedVehicle.id,
+            nextStatus: 'Purchased',
+          },
+        },
+        trx,
+      );
+
+      await this.activityHistoryService.write(
+        {
+          actor: user,
+          entityType: 'vehicle',
+          entityId: insertedVehicle.id,
+          actionType: 'vehicle.created_from_seller_lead',
+          summary: 'Vehicle created from seller lead conversion',
+          metadata: {
+            sellerLeadId: id,
+            stockNumber,
+            status: vehicleModel.status,
+          },
+        },
+        trx,
+      );
+
       const updatedLead = await this.getLeadRecordOrThrow(id, trx);
       const persistedVehicle = await trx
         .selectFrom('inventory.vehicles')
@@ -516,6 +590,77 @@ export class SellerLeadsService {
       estimatedCosts: estimatedCosts.map(mapSellerLeadEstimatedCostResponse),
       ...summary,
     });
+  }
+
+  private async writeUpdateActivity(
+    user: CurrentUser,
+    previous: Awaited<ReturnType<SellerLeadsService['getLeadRecordOrThrow']>>,
+    next: {
+      status: string;
+      assignee_user_id: string | null;
+      seller_name: string;
+      vehicle_brand: string;
+      vehicle_model: string;
+      asking_price: string | null;
+      notes: string | null;
+    },
+  ) {
+    const events: Promise<void>[] = [];
+
+    if (previous.status !== next.status) {
+      events.push(
+        this.activityHistoryService.write({
+          actor: user,
+          entityType: 'seller_lead',
+          entityId: previous.id,
+          actionType: 'seller_lead.status_changed',
+          summary: `Seller lead moved from ${previous.status} to ${next.status}`,
+          metadata: { from: previous.status, to: next.status },
+        }),
+      );
+    }
+
+    if (previous.assignee_user_id !== next.assignee_user_id) {
+      events.push(
+        this.activityHistoryService.write({
+          actor: user,
+          entityType: 'seller_lead',
+          entityId: previous.id,
+          actionType: 'seller_lead.assignment_changed',
+          summary: next.assignee_user_id ? 'Seller lead assignment changed' : 'Seller lead unassigned',
+          metadata: { from: previous.assignee_user_id, to: next.assignee_user_id },
+        }),
+      );
+    }
+
+    if (
+      previous.seller_name !== next.seller_name ||
+      previous.vehicle_brand !== next.vehicle_brand ||
+      previous.vehicle_model !== next.vehicle_model ||
+      previous.asking_price !== next.asking_price ||
+      previous.notes !== next.notes
+    ) {
+      events.push(
+        this.activityHistoryService.write({
+          actor: user,
+          entityType: 'seller_lead',
+          entityId: previous.id,
+          actionType: 'seller_lead.details_updated',
+          summary: 'Seller lead details updated',
+          metadata: {
+            changedFields: [
+              previous.seller_name !== next.seller_name ? 'sellerName' : null,
+              previous.vehicle_brand !== next.vehicle_brand ? 'vehicleBrand' : null,
+              previous.vehicle_model !== next.vehicle_model ? 'vehicleModel' : null,
+              previous.asking_price !== next.asking_price ? 'askingPrice' : null,
+              previous.notes !== next.notes ? 'notes' : null,
+            ].filter(Boolean),
+          },
+        }),
+      );
+    }
+
+    await Promise.all(events);
   }
 
   private async getLeadRecordOrThrow(
