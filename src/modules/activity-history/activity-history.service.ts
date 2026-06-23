@@ -48,7 +48,6 @@ export class ActivityHistoryService {
       .where('entity_id', '=', entityId)
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
-
     const events = await this.db
       .selectFrom('ops.activity_history')
       .selectAll()
@@ -82,7 +81,6 @@ export class ActivityHistoryService {
       .select(({ fn }) => fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
-
     const events = await this.db
       .selectFrom('ops.activity_history')
       .selectAll()
