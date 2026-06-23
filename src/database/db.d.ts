@@ -774,7 +774,6 @@ export interface InventoryVehicleTrackedCosts {
   updated_at: Generated<Timestamp>;
   vehicle_id: string;
 }
-
 export interface OpsActivityHistory {
   action_type: string;
   actor_display_name: string | null;

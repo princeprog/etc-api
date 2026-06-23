@@ -25,6 +25,7 @@ import { ActivityHistoryModule } from './modules/activity-history/activity-histo
     DashboardModule,
     ReportsModule,
     UploadsModule,
+    ActivityHistoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
