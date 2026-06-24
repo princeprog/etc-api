@@ -342,7 +342,6 @@ export class FollowUpsService {
 
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
-
   async complete(user: CurrentUser, id: string, dto: CompleteFollowUpDto) {
     const followUp = await this.getRecordOrThrow(id);
     const outcomeNote = dto.outcomeNote?.trim();
@@ -394,7 +393,6 @@ export class FollowUpsService {
 
     return Number(result.count);
   }
-
   private async writeLeadFollowUpActivity(
     user: CurrentUser,
     followUp: Awaited<ReturnType<FollowUpsService['getRecordOrThrow']>>,
