@@ -393,7 +393,6 @@ export class FollowUpsService {
 
     return Number(result.count);
   }
-
   private async writeLeadFollowUpActivity(
     user: CurrentUser,
     followUp: Awaited<ReturnType<FollowUpsService['getRecordOrThrow']>>,
