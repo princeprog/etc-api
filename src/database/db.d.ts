@@ -31,6 +31,7 @@ export interface AuthUsers {
   email: string;
   full_name: string;
   id: Generated<string>;
+  must_change_password: Generated<boolean>;
   password_hash: string;
   role: string;
   updated_at: Generated<Timestamp>;

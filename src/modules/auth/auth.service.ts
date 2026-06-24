@@ -115,6 +115,7 @@ export class AuthService {
         'auth.users.role as userRole',
         'auth.users.password_hash as userPasswordHash',
         'auth.users.active as userActive',
+        'auth.users.must_change_password as userMustChangePassword',
         'auth.users.created_at as userCreatedAt',
         'auth.users.updated_at as userUpdatedAt',
       ])
@@ -144,6 +145,7 @@ export class AuthService {
       role: parseRole(session.userRole),
       password_hash: session.userPasswordHash,
       active: session.userActive,
+      must_change_password: session.userMustChangePassword,
       created_at: session.userCreatedAt,
       updated_at: session.userUpdatedAt,
     };
@@ -390,6 +392,7 @@ export class AuthService {
     full_name: string;
     role: string;
     active: boolean;
+    must_change_password: boolean;
     created_at: Date;
     updated_at: Date;
   }): User {

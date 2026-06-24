@@ -39,6 +39,7 @@ export interface UsersTable {
   full_name: string;
   role: RoleName;
   active: Generated<boolean>;
+  must_change_password: Generated<boolean>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
