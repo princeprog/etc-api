@@ -18,6 +18,7 @@ import { VehiclesService } from '../vehicles/vehicles.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import {
+  calculateProfitAfterTrackedCosts,
   centsToMoney,
   formatSaleNumber,
   getDefaultCommissionAmount,
@@ -74,7 +75,9 @@ export class SalesService {
       }
 
       if (buyerLead.status === 'Won') {
-        throw new BadRequestException('Buyer lead is already won and cannot be used for a new sale');
+        throw new BadRequestException(
+          'Buyer lead is already won and cannot be used for a new sale',
+        );
       }
 
       const existingSale = await trx
@@ -186,10 +189,15 @@ export class SalesService {
       };
     });
 
+    const vehicle = (await this.vehiclesService.findOne(vehicleId)).vehicle;
+
     return {
-      sale: mapSaleResponse(result.sale),
+      sale: this.mapSaleProfitability(
+        mapSaleResponse(result.sale),
+        vehicle.trackedCostsTotal,
+      ),
       commission: mapCommissionResponse(result.commission),
-      vehicle: (await this.vehiclesService.findOne(vehicleId)).vehicle,
+      vehicle,
     };
   }
 
@@ -230,13 +238,23 @@ export class SalesService {
     const summary = await this.buildFilteredSalesQuery(query)
       .select(({ fn }) => [
         fn.countAll<number>().as('totalSales'),
-        sql<string>`coalesce(sum(sales.sales.final_sale_amount::numeric), 0)::text`.as('totalRevenue'),
+        sql<string>`coalesce(sum(sales.sales.final_sale_amount::numeric), 0)::text`.as(
+          'totalRevenue',
+        ),
         sql<string>`coalesce(sum(coalesce(sales.sales.gross_profit_amount, '0.00')::numeric), 0)::text`.as(
           'totalGrossProfit',
         ),
         sql<string>`coalesce(sum(sales.commissions.final_amount::numeric), 0)::text`.as(
           'totalCommissionPayouts',
         ),
+        sql<string>`coalesce(sum(
+          coalesce(sales.sales.gross_profit_amount, '0.00')::numeric -
+          coalesce((
+            select sum(cost.amount)
+            from inventory.vehicle_tracked_costs as cost
+            where cost.vehicle_id = sales.sales.vehicle_id
+          ), 0)
+        ), 0)::text`.as('totalProfitAfterTrackedCosts'),
       ])
       .executeTakeFirstOrThrow();
 
@@ -244,7 +262,12 @@ export class SalesService {
       totalSales: Number(summary.totalSales),
       totalRevenue: this.normalizeSummaryMoney(summary.totalRevenue),
       totalGrossProfit: this.normalizeSummaryMoney(summary.totalGrossProfit),
-      totalCommissionPayouts: this.normalizeSummaryMoney(summary.totalCommissionPayouts),
+      totalCommissionPayouts: this.normalizeSummaryMoney(
+        summary.totalCommissionPayouts,
+      ),
+      totalProfitAfterTrackedCosts: this.normalizeSummaryMoney(
+        summary.totalProfitAfterTrackedCosts,
+      ),
     };
   }
 
@@ -285,11 +308,19 @@ export class SalesService {
       .executeTakeFirst();
 
     if (!buyerLead) {
-      throw new NotFoundException(`Buyer lead ${sale.buyer_lead_id} was not found`);
+      throw new NotFoundException(
+        `Buyer lead ${sale.buyer_lead_id} was not found`,
+      );
     }
 
+    const vehicle = (await this.vehiclesService.findOne(sale.vehicle_id))
+      .vehicle;
+
     return {
-      ...mapSaleResponse(sale),
+      ...this.mapSaleProfitability(
+        mapSaleResponse(sale),
+        vehicle.trackedCostsTotal,
+      ),
       buyerLead: {
         id: buyerLead.id,
         buyerName: buyerLead.buyer_name,
@@ -299,7 +330,7 @@ export class SalesService {
         closingNote: buyerLead.closing_note,
       },
       commission: mapCommissionResponse(commission),
-      vehicle: (await this.vehiclesService.findOne(sale.vehicle_id)).vehicle,
+      vehicle,
     };
   }
 
@@ -334,10 +365,18 @@ export class SalesService {
       .where('id', 'in', buyerLeadIds)
       .execute();
 
-    const vehicles = await Promise.all(sales.map((sale) => this.vehiclesService.findOne(sale.vehicle_id)));
-    const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.vehicle.id, vehicle.vehicle]));
-    const commissionBySaleId = new Map(commissions.map((commission) => [commission.sale_id, commission]));
-    const buyerLeadById = new Map(buyerLeads.map((buyerLead) => [buyerLead.id, buyerLead]));
+    const vehicles = await Promise.all(
+      sales.map((sale) => this.vehiclesService.findOne(sale.vehicle_id)),
+    );
+    const vehicleById = new Map(
+      vehicles.map((vehicle) => [vehicle.vehicle.id, vehicle.vehicle]),
+    );
+    const commissionBySaleId = new Map(
+      commissions.map((commission) => [commission.sale_id, commission]),
+    );
+    const buyerLeadById = new Map(
+      buyerLeads.map((buyerLead) => [buyerLead.id, buyerLead]),
+    );
     const salesById = new Map(sales.map((sale) => [sale.id, sale]));
 
     return ids.map((id) => {
@@ -362,11 +401,16 @@ export class SalesService {
       const buyerLead = buyerLeadById.get(sale.buyer_lead_id);
 
       if (!buyerLead) {
-        throw new NotFoundException(`Buyer lead ${sale.buyer_lead_id} was not found`);
+        throw new NotFoundException(
+          `Buyer lead ${sale.buyer_lead_id} was not found`,
+        );
       }
 
       return {
-        ...mapSaleResponse(sale),
+        ...this.mapSaleProfitability(
+          mapSaleResponse(sale),
+          vehicle.trackedCostsTotal,
+        ),
         buyerLead: {
           id: buyerLead.id,
           buyerName: buyerLead.buyer_name,
@@ -395,6 +439,20 @@ export class SalesService {
     return vehicle;
   }
 
+  private mapSaleProfitability(
+    sale: ReturnType<typeof mapSaleResponse>,
+    trackedCostsTotal: string,
+  ) {
+    return {
+      ...sale,
+      trackedCostsTotal,
+      profitAfterTrackedCosts: calculateProfitAfterTrackedCosts(
+        sale.grossProfitAmount,
+        trackedCostsTotal,
+      ),
+    };
+  }
+
   private async getBuyerLeadOrThrow(id: string, trx: Transaction<DB>) {
     const buyerLead = await trx
       .selectFrom('crm.buyer_leads')
@@ -415,9 +473,21 @@ export class SalesService {
 
     let salesQuery = this.db
       .selectFrom('sales.sales')
-      .innerJoin('inventory.vehicles', 'inventory.vehicles.id', 'sales.sales.vehicle_id')
-      .innerJoin('crm.buyer_leads', 'crm.buyer_leads.id', 'sales.sales.buyer_lead_id')
-      .innerJoin('sales.commissions', 'sales.commissions.sale_id', 'sales.sales.id');
+      .innerJoin(
+        'inventory.vehicles',
+        'inventory.vehicles.id',
+        'sales.sales.vehicle_id',
+      )
+      .innerJoin(
+        'crm.buyer_leads',
+        'crm.buyer_leads.id',
+        'sales.sales.buyer_lead_id',
+      )
+      .innerJoin(
+        'sales.commissions',
+        'sales.commissions.sale_id',
+        'sales.sales.id',
+      );
 
     if (search) {
       const pattern = `%${search.toLowerCase()}%`;
@@ -425,12 +495,24 @@ export class SalesService {
         or([
           eb(sql<string>`lower(sales.sales.sale_number)`, 'like', pattern),
           eb(sql<string>`lower(sales.sales.id::text)`, 'like', pattern),
-          eb(sql<string>`lower(inventory.vehicles.stock_number)`, 'like', pattern),
+          eb(
+            sql<string>`lower(inventory.vehicles.stock_number)`,
+            'like',
+            pattern,
+          ),
           eb(sql<string>`lower(inventory.vehicles.brand)`, 'like', pattern),
           eb(sql<string>`lower(inventory.vehicles.model)`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(sales.sales.agent_name, ''))`, 'like', pattern),
+          eb(
+            sql<string>`lower(coalesce(sales.sales.agent_name, ''))`,
+            'like',
+            pattern,
+          ),
           eb(sql<string>`lower(crm.buyer_leads.buyer_name)`, 'like', pattern),
-          eb(sql<string>`lower(crm.buyer_leads.contact_number)`, 'like', pattern),
+          eb(
+            sql<string>`lower(crm.buyer_leads.contact_number)`,
+            'like',
+            pattern,
+          ),
         ]),
       );
     }
@@ -477,7 +559,10 @@ export class SalesService {
   private applyStatusFilter(
     query: SelectQueryBuilder<
       DB,
-      'sales.sales' | 'inventory.vehicles' | 'crm.buyer_leads' | 'sales.commissions',
+      | 'sales.sales'
+      | 'inventory.vehicles'
+      | 'crm.buyer_leads'
+      | 'sales.commissions',
       object
     >,
     status: string,
@@ -501,7 +586,10 @@ export class SalesService {
   private applyDateRangeFilter(
     query: SelectQueryBuilder<
       DB,
-      'sales.sales' | 'inventory.vehicles' | 'crm.buyer_leads' | 'sales.commissions',
+      | 'sales.sales'
+      | 'inventory.vehicles'
+      | 'crm.buyer_leads'
+      | 'sales.commissions',
       object
     >,
     dateRange: string,
@@ -517,9 +605,15 @@ export class SalesService {
           sql<boolean>`date_trunc('month', sales.sales.sale_date) = date_trunc('month', ${now}::timestamptz)`,
         );
       case 'last_30_days':
-        return query.where('sales.sales.sale_date', '>=', new Date(now.getTime() - 30 * 86_400_000));
+        return query.where(
+          'sales.sales.sale_date',
+          '>=',
+          new Date(now.getTime() - 30 * 86_400_000),
+        );
       default:
-        throw new BadRequestException(`Unsupported sales date range: ${dateRange}`);
+        throw new BadRequestException(
+          `Unsupported sales date range: ${dateRange}`,
+        );
     }
   }
 

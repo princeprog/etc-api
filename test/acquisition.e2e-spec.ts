@@ -35,6 +35,7 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
   beforeEach(async () => {
     await db.deleteFrom('sales.commissions').execute();
     await db.deleteFrom('sales.sales').execute();
+    await db.deleteFrom('inventory.vehicle_tracked_costs').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
@@ -71,6 +72,7 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
   afterAll(async () => {
     await db.deleteFrom('sales.commissions').execute();
     await db.deleteFrom('sales.sales').execute();
+    await db.deleteFrom('inventory.vehicle_tracked_costs').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
@@ -246,6 +248,55 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
 
     expect(firstResponse.body.vehicle.stockNumber).toMatch(/^ETC-\d{4}-001$/);
     expect(secondResponse.body.vehicle.stockNumber).toMatch(/^ETC-\d{4}-002$/);
+  });
+
+  it('creates and deletes tracked vehicle costs while returning the running total', async () => {
+    const vehicleResponse = await request(app.getHttpServer())
+      .post('/vehicles')
+      .set('Cookie', authCookies)
+      .send({ brand: 'Mazda', model: 'CX-5', year: 2023, status: 'Incoming' })
+      .expect(201);
+    const vehicleId = vehicleResponse.body.vehicle.id;
+
+    const firstCostResponse = await request(app.getHttpServer())
+      .post(`/vehicles/${vehicleId}/tracked-costs`)
+      .set('Cookie', authCookies)
+      .send({ category: 'repair', amount: '12500.50', note: 'Brake service' })
+      .expect(201);
+
+    expect(firstCostResponse.body.vehicle).toEqual(
+      expect.objectContaining({
+        trackedCostsTotal: '12500.50',
+        trackedCosts: [
+          expect.objectContaining({
+            category: 'repair',
+            amount: '12500.50',
+            note: 'Brake service',
+          }),
+        ],
+      }),
+    );
+
+    const secondCostResponse = await request(app.getHttpServer())
+      .post(`/vehicles/${vehicleId}/tracked-costs`)
+      .set('Cookie', authCookies)
+      .send({
+        category: 'detailing',
+        amount: '2500.00',
+        note: 'Interior detailing',
+      })
+      .expect(201);
+
+    expect(secondCostResponse.body.vehicle.trackedCostsTotal).toBe('15000.50');
+
+    const firstCostId = firstCostResponse.body.vehicle.trackedCosts[0].id;
+    const deleteResponse = await request(app.getHttpServer())
+      .delete(`/vehicles/${vehicleId}/tracked-costs/${firstCostId}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(deleteResponse.body.vehicle.trackedCostsTotal).toBe('2500.00');
+    expect(deleteResponse.body.vehicle.trackedCosts).toHaveLength(1);
   });
 
   it('filters vehicles by status when requested', async () => {

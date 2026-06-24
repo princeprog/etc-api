@@ -60,6 +60,20 @@ export function centsToMoney(value: number) {
   return (value / 100).toFixed(2);
 }
 
+export function calculateProfitAfterTrackedCosts(
+  grossProfitAmount: string | null,
+  trackedCostsTotal: string,
+) {
+  if (grossProfitAmount === null) {
+    return null;
+  }
+
+  return centsToMoney(
+    parseMoneyToCents(grossProfitAmount, 'sale.grossProfitAmount') -
+      parseMoneyToCents(trackedCostsTotal, 'vehicle.trackedCostsTotal'),
+  );
+}
+
 export function getSaleNumberYear(date: Date) {
   return date.getUTCFullYear();
 }

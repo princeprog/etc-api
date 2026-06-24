@@ -24,6 +24,13 @@ export type BuyerLeadStatus =
   | 'Lost';
 export type FollowUpStatus = 'Due' | 'Completed' | 'Overdue';
 export type LeadType = 'seller' | 'buyer';
+export type VehicleTrackedCostCategory =
+  | 'reconditioning'
+  | 'repair'
+  | 'detailing'
+  | 'transport'
+  | 'documentation'
+  | 'miscellaneous';
 
 export interface UsersTable {
   id: Generated<string>;
@@ -78,6 +85,16 @@ export interface VehiclePhotosTable {
   file_url: string;
   sort_order: Generated<number>;
   created_at: Generated<Date>;
+}
+
+export interface VehicleTrackedCostsTable {
+  id: Generated<string>;
+  vehicle_id: string;
+  category: VehicleTrackedCostCategory;
+  amount: string;
+  note: string;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
 }
 
 export interface SellerLeadsTable {
@@ -185,6 +202,7 @@ export interface DB {
   'auth.sessions': SessionsTable;
   'inventory.vehicles': VehiclesTable;
   'inventory.vehicle_photos': VehiclePhotosTable;
+  'inventory.vehicle_tracked_costs': VehicleTrackedCostsTable;
   'crm.seller_leads': SellerLeadsTable;
   'crm.buyer_leads': BuyerLeadsTable;
   'crm.lead_vehicle_links': LeadVehicleLinksTable;
@@ -205,6 +223,9 @@ export type SessionUpdate = Updateable<SessionsTable>;
 export type Vehicle = Selectable<VehiclesTable>;
 export type NewVehicle = Insertable<VehiclesTable>;
 export type VehicleUpdate = Updateable<VehiclesTable>;
+export type VehicleTrackedCost = Selectable<VehicleTrackedCostsTable>;
+export type NewVehicleTrackedCost = Insertable<VehicleTrackedCostsTable>;
+export type VehicleTrackedCostUpdate = Updateable<VehicleTrackedCostsTable>;
 
 export type SellerLead = Selectable<SellerLeadsTable>;
 export type NewSellerLead = Insertable<SellerLeadsTable>;
