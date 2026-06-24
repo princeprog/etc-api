@@ -1,9 +1,18 @@
 import type { FollowUpStatus, LeadType } from '../../../database/schema';
 
-export type FollowUpSort = 'dueAt' | '-dueAt' | 'updatedAt' | '-updatedAt';
+export type FollowUpStatusFilter = FollowUpStatus | 'DueToday';
+export type FollowUpSortKey =
+  | 'note'
+  | 'leadType'
+  | 'leadName'
+  | 'dueAt'
+  | 'status'
+  | 'updatedAt';
+
+export type FollowUpSort = FollowUpSortKey | `-${FollowUpSortKey}`;
 
 export class ListFollowUpsQueryDto {
-  status?: FollowUpStatus;
+  status?: FollowUpStatusFilter;
   leadType?: LeadType;
   assigneeUserId?: string;
   dueFrom?: string;

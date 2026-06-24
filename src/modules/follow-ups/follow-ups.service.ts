@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Kysely, SelectQueryBuilder } from 'kysely';
+import { sql, type Kysely, type SelectQueryBuilder } from 'kysely';
 
 import {
   buildPaginatedResponse,
@@ -88,6 +88,12 @@ export class FollowUpsService {
 
   async findAll(query: ListFollowUpsQueryDto = {}) {
     const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
     const pagination = parsePagination(query);
     const status = parseFollowUpStatus(query.status);
     const leadType = parseOptionalLeadType(query.leadType);
@@ -108,6 +114,12 @@ export class FollowUpsService {
       )
       .$if(status === 'Due', (qb) =>
         qb.where('fu.completed_at', 'is', null).where('fu.due_at', '>=', now),
+      )
+      .$if(status === 'DueToday', (qb) =>
+        qb
+          .where('fu.completed_at', 'is', null)
+          .where('fu.due_at', '>=', todayStart)
+          .where('fu.due_at', '<', tomorrowStart),
       )
       .$if(Boolean(leadType), (qb) => qb.where('fu.lead_type', '=', leadType!))
       .$if(Boolean(query.assigneeUserId), (qb) =>
@@ -132,10 +144,26 @@ export class FollowUpsService {
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
 
-    const sortColumn = sort.endsWith('updatedAt')
-      ? 'fu.updated_at'
-      : 'fu.due_at';
+    const baseSort = sort.replace(/^-/, '');
     const sortDirection = sort.startsWith('-') ? 'desc' : 'asc';
+
+    const sortExpression = (() => {
+      switch (baseSort) {
+        case 'note':
+          return sql`fu.note`;
+        case 'leadType':
+          return sql`fu.lead_type`;
+        case 'leadName':
+          return sql`COALESCE(sl.seller_name, bl.buyer_name)`;
+        case 'status':
+          return sql`CASE WHEN fu.completed_at IS NOT NULL THEN 2 WHEN fu.due_at < ${now} THEN 0 ELSE 1 END`;
+        case 'updatedAt':
+          return sql`fu.updated_at`;
+        case 'dueAt':
+        default:
+          return sql`fu.due_at`;
+      }
+    })();
 
     const rows = await filtered
       .select([
@@ -157,7 +185,7 @@ export class FollowUpsService {
         'bl.buyer_name',
         'bl.contact_number',
       ])
-      .orderBy(sortColumn, sortDirection)
+      .orderBy(sortExpression, sortDirection)
       .orderBy('fu.id', 'asc')
       .limit(pagination.pageSize)
       .offset(pagination.offset)

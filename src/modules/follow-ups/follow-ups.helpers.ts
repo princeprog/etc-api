@@ -1,16 +1,33 @@
 import { BadRequestException } from '@nestjs/common';
 
 import type { FollowUpStatus, LeadType } from '../../database/schema';
-import type { FollowUpSort } from './dto/list-follow-ups-query.dto';
+import type {
+  FollowUpSort,
+  FollowUpSortKey,
+  FollowUpStatusFilter,
+} from './dto/list-follow-ups-query.dto';
 
-const FOLLOW_UP_STATUSES: FollowUpStatus[] = ['Due', 'Completed', 'Overdue'];
-const LEAD_TYPES: LeadType[] = ['seller', 'buyer'];
-const FOLLOW_UP_SORTS: FollowUpSort[] = [
-  'dueAt',
-  '-dueAt',
-  'updatedAt',
-  '-updatedAt',
+const FOLLOW_UP_STATUS_FILTERS: FollowUpStatusFilter[] = [
+  'Due',
+  'Completed',
+  'Overdue',
+  'DueToday',
 ];
+const LEAD_TYPES: LeadType[] = ['seller', 'buyer'];
+
+const SORT_KEYS: FollowUpSortKey[] = [
+  'note',
+  'leadType',
+  'leadName',
+  'dueAt',
+  'status',
+  'updatedAt',
+];
+
+const FOLLOW_UP_SORTS: FollowUpSort[] = SORT_KEYS.flatMap((key) => [
+  key,
+  `-${key}` as FollowUpSort,
+]);
 
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_PAGE_SIZE = 20;
@@ -44,16 +61,16 @@ export function deriveFollowUpStatus(
 
 export function parseFollowUpStatus(
   value: string | undefined,
-): FollowUpStatus | undefined {
+): FollowUpStatusFilter | undefined {
   if (!value) {
     return undefined;
   }
 
-  if (!FOLLOW_UP_STATUSES.includes(value as FollowUpStatus)) {
+  if (!FOLLOW_UP_STATUS_FILTERS.includes(value as FollowUpStatusFilter)) {
     throw new BadRequestException(`Unsupported follow-up status: ${value}`);
   }
 
-  return value as FollowUpStatus;
+  return value as FollowUpStatusFilter;
 }
 
 export function parseLeadType(value: string): LeadType {
