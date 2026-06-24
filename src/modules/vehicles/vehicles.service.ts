@@ -17,11 +17,19 @@ import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import {
   formatVehicleStockNumber,
   mapVehicleResponse,
+  normalizeTrackedCostAmount,
+  normalizeTrackedCostNote,
   normalizeVehiclePhotos,
+  parseVehicleTrackedCostCategory,
   parseVehicleStatus,
   validateVehicleAvailability,
 } from './vehicles.helpers';
-import type { VehiclePhotoInput, VehicleWriteModel } from './vehicles.types';
+import type {
+  VehiclePhotoInput,
+  VehicleTrackedCostResponse,
+  VehicleWriteModel,
+} from './vehicles.types';
+import { centsToMoney, parseMoneyToCents } from '../sales/sales.helpers';
 
 @Injectable()
 export class VehiclesService {
@@ -202,6 +210,68 @@ export class VehiclesService {
     return { vehicle };
   }
 
+  async createTrackedCost(
+    vehicleId: string,
+    dto: { category: string; amount: string; note: string },
+  ) {
+    await this.getVehicleOrThrow(vehicleId);
+
+    await this.db
+      .insertInto('inventory.vehicle_tracked_costs')
+      .values({
+        vehicle_id: vehicleId,
+        category: parseVehicleTrackedCostCategory(dto.category),
+        amount: normalizeTrackedCostAmount(dto.amount),
+        note: normalizeTrackedCostNote(dto.note),
+      })
+      .executeTakeFirstOrThrow();
+
+    return { vehicle: await this.getVehicleOrThrow(vehicleId) };
+  }
+
+  async updateTrackedCost(
+    vehicleId: string,
+    costId: string,
+    dto: { category?: string; amount?: string; note?: string },
+  ) {
+    const current = await this.getTrackedCostOrThrow(vehicleId, costId);
+
+    await this.db
+      .updateTable('inventory.vehicle_tracked_costs')
+      .set({
+        category: parseVehicleTrackedCostCategory(
+          dto.category,
+          parseVehicleTrackedCostCategory(current.category),
+        ),
+        amount:
+          dto.amount !== undefined
+            ? normalizeTrackedCostAmount(dto.amount)
+            : current.amount,
+        note:
+          dto.note !== undefined
+            ? normalizeTrackedCostNote(dto.note)
+            : current.note,
+        updated_at: new Date(),
+      })
+      .where('id', '=', costId)
+      .where('vehicle_id', '=', vehicleId)
+      .execute();
+
+    return { vehicle: await this.getVehicleOrThrow(vehicleId) };
+  }
+
+  async deleteTrackedCost(vehicleId: string, costId: string) {
+    await this.getTrackedCostOrThrow(vehicleId, costId);
+
+    await this.db
+      .deleteFrom('inventory.vehicle_tracked_costs')
+      .where('id', '=', costId)
+      .where('vehicle_id', '=', vehicleId)
+      .execute();
+
+    return { vehicle: await this.getVehicleOrThrow(vehicleId) };
+  }
+
   buildVehicleCreateModel(input: {
     stockNumber?: string;
     brand: string;
@@ -281,10 +351,13 @@ export class VehiclesService {
     }
 
     const photos = await this.getVehiclePhotos(id, executor);
+    const trackedCosts = await this.getVehicleTrackedCosts(id, executor);
     return mapVehicleResponse({
       ...vehicle,
       status: parseVehicleStatus(vehicle.status, 'Incoming'),
       photos,
+      trackedCosts,
+      trackedCostsTotal: this.sumTrackedCosts(trackedCosts),
     });
   }
 
@@ -329,6 +402,55 @@ export class VehiclesService {
       fileUrl: photo.file_url,
       sortOrder: photo.sort_order,
     }));
+  }
+
+  private async getVehicleTrackedCosts(
+    id: string,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
+    const db = executor ?? this.db;
+    const trackedCosts = await db
+      .selectFrom('inventory.vehicle_tracked_costs')
+      .selectAll()
+      .where('vehicle_id', '=', id)
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    return trackedCosts.map<VehicleTrackedCostResponse>((cost) => ({
+      id: cost.id,
+      category: parseVehicleTrackedCostCategory(cost.category),
+      amount: cost.amount,
+      note: cost.note,
+      createdAt: cost.created_at,
+      updatedAt: cost.updated_at,
+    }));
+  }
+
+  private sumTrackedCosts(trackedCosts: VehicleTrackedCostResponse[]) {
+    return centsToMoney(
+      trackedCosts.reduce(
+        (sum, cost) =>
+          sum + parseMoneyToCents(cost.amount, 'trackedCost.amount'),
+        0,
+      ),
+    );
+  }
+
+  private async getTrackedCostOrThrow(vehicleId: string, costId: string) {
+    const trackedCost = await this.db
+      .selectFrom('inventory.vehicle_tracked_costs')
+      .selectAll()
+      .where('id', '=', costId)
+      .where('vehicle_id', '=', vehicleId)
+      .executeTakeFirst();
+
+    if (!trackedCost) {
+      throw new NotFoundException(
+        `Tracked cost ${costId} was not found for vehicle ${vehicleId}`,
+      );
+    }
+
+    return trackedCost;
   }
 
   private async replacePhotos(

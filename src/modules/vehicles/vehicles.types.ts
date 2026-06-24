@@ -1,8 +1,21 @@
-import type { Vehicle, VehicleStatus } from '../../database/schema';
+import type {
+  Vehicle,
+  VehicleStatus,
+  VehicleTrackedCostCategory,
+} from '../../database/schema';
 
 export type VehiclePhotoInput = {
   fileUrl: string;
   sortOrder?: number;
+};
+
+export type VehicleTrackedCostResponse = {
+  id: string;
+  category: VehicleTrackedCostCategory;
+  amount: string;
+  note: string;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export type VehicleWriteModel = {
@@ -48,6 +61,8 @@ export type VehicleResponse = {
   sellerLeadId: string | null;
   status: VehicleStatus;
   photos: VehiclePhotoInput[];
+  trackedCosts: VehicleTrackedCostResponse[];
+  trackedCostsTotal: string;
   createdAt: Date;
   updatedAt: Date;
 };

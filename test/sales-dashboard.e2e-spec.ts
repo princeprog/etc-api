@@ -42,6 +42,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('crm.follow_ups').execute();
     await db.deleteFrom('crm.lead_vehicle_links').execute();
+    await db.deleteFrom('inventory.vehicle_tracked_costs').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.buyer_leads').execute();
@@ -205,6 +206,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('crm.follow_ups').execute();
     await db.deleteFrom('crm.lead_vehicle_links').execute();
+    await db.deleteFrom('inventory.vehicle_tracked_costs').execute();
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.buyer_leads').execute();
@@ -223,6 +225,16 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
   });
 
   it('creates a valid sale, finalizes commission, and updates related records', async () => {
+    await db
+      .insertInto('inventory.vehicle_tracked_costs')
+      .values({
+        vehicle_id: linkedVehicleId,
+        category: 'reconditioning',
+        amount: '30000.00',
+        note: 'Pre-sale reconditioning',
+      })
+      .execute();
+
     const response = await request(app.getHttpServer())
       .post('/sales')
       .set('Cookie', authCookies)
@@ -244,6 +256,8 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
         agentName: 'Agent Cruz',
         finalSaleAmount: '1280000.00',
         grossProfitAmount: '180000.00',
+        trackedCostsTotal: '30000.00',
+        profitAfterTrackedCosts: '150000.00',
         commissionLocked: true,
       }),
       commission: expect.objectContaining({
@@ -254,6 +268,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       vehicle: expect.objectContaining({
         id: linkedVehicleId,
         status: 'Sold',
+        trackedCostsTotal: '30000.00',
       }),
     });
 
@@ -565,7 +580,9 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .execute();
 
     const filteredSales = await request(app.getHttpServer())
-      .get('/sales?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=1&pageSize=1')
+      .get(
+        '/sales?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=1&pageSize=1',
+      )
       .set('Cookie', authCookies)
       .expect(200);
 
@@ -617,9 +634,11 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     expect(paginatedAllSales.body.totalPages).toBe(3);
     expect(paginatedAllSales.body.sales).toHaveLength(1);
     expect(
-      [firstSale.body.sale.id, secondSale.body.sale.id, thirdSale.body.sale.id].includes(
-        paginatedAllSales.body.sales[0].id,
-      ),
+      [
+        firstSale.body.sale.id,
+        secondSale.body.sale.id,
+        thirdSale.body.sale.id,
+      ].includes(paginatedAllSales.body.sales[0].id),
     ).toBe(true);
   });
 
@@ -697,7 +716,9 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .execute();
 
     const summaryResponse = await request(app.getHttpServer())
-      .get('/sales/summary?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=99&pageSize=1')
+      .get(
+        '/sales/summary?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=99&pageSize=1',
+      )
       .set('Cookie', authCookies)
       .expect(200);
 
@@ -706,6 +727,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       totalRevenue: '1690000.00',
       totalGrossProfit: '190000.00',
       totalCommissionPayouts: '8000.00',
+      totalProfitAfterTrackedCosts: '190000.00',
     });
 
     const allSummaryResponse = await request(app.getHttpServer())
@@ -718,6 +740,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       totalRevenue: '4510000.00',
       totalGrossProfit: '510000.00',
       totalCommissionPayouts: '13000.00',
+      totalProfitAfterTrackedCosts: '510000.00',
     });
   });
 });

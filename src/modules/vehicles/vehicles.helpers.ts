@@ -1,9 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
 
-import type { VehicleStatus } from '../../database/schema';
+import type {
+  VehicleStatus,
+  VehicleTrackedCostCategory,
+} from '../../database/schema';
 import type {
   VehiclePhotoInput,
   VehicleResponse,
+  VehicleTrackedCostResponse,
   VehicleWriteModel,
 } from './vehicles.types';
 
@@ -13,6 +17,15 @@ const VEHICLE_STATUSES: VehicleStatus[] = [
   'Available',
   'Reserved',
   'Sold',
+];
+
+const VEHICLE_TRACKED_COST_CATEGORIES: VehicleTrackedCostCategory[] = [
+  'reconditioning',
+  'repair',
+  'detailing',
+  'transport',
+  'documentation',
+  'miscellaneous',
 ];
 
 export function formatVehicleStockNumber(year: number, sequence: number) {
@@ -49,6 +62,61 @@ export function parseVehicleStatus(
   }
 
   return value as VehicleStatus;
+}
+
+export function parseVehicleTrackedCostCategory(
+  value: string | undefined,
+  fallback?: VehicleTrackedCostCategory,
+): VehicleTrackedCostCategory {
+  if (!value) {
+    if (fallback) {
+      return fallback;
+    }
+
+    throw new BadRequestException('Tracked cost category is required');
+  }
+
+  if (
+    !VEHICLE_TRACKED_COST_CATEGORIES.includes(
+      value as VehicleTrackedCostCategory,
+    )
+  ) {
+    throw new BadRequestException(
+      `Unsupported tracked cost category: ${value}`,
+    );
+  }
+
+  return value as VehicleTrackedCostCategory;
+}
+
+export function normalizeTrackedCostAmount(
+  value: string | null | undefined,
+): string {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    throw new BadRequestException('Tracked cost amount is required');
+  }
+
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+    throw new BadRequestException(
+      'Tracked cost amount must be a valid monetary value',
+    );
+  }
+
+  return Number(trimmed).toFixed(2);
+}
+
+export function normalizeTrackedCostNote(
+  value: string | null | undefined,
+): string {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    throw new BadRequestException('Tracked cost note is required');
+  }
+
+  return trimmed;
 }
 
 export function validateVehicleAvailability(model: VehicleWriteModel): void {
@@ -104,6 +172,8 @@ export function mapVehicleResponse(vehicle: {
   created_at: Date;
   updated_at: Date;
   photos: VehiclePhotoInput[];
+  trackedCosts: VehicleTrackedCostResponse[];
+  trackedCostsTotal: string;
 }): VehicleResponse {
   return {
     id: vehicle.id,
@@ -126,6 +196,8 @@ export function mapVehicleResponse(vehicle: {
     sellerLeadId: vehicle.seller_lead_id,
     status: vehicle.status,
     photos: vehicle.photos,
+    trackedCosts: vehicle.trackedCosts,
+    trackedCostsTotal: vehicle.trackedCostsTotal,
     createdAt: vehicle.created_at,
     updatedAt: vehicle.updated_at,
   };

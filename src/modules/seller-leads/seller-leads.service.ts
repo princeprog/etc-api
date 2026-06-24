@@ -103,7 +103,11 @@ export class SellerLeadsService {
           eb(sql<string>`lower(contact_number)`, 'like', pattern),
           eb(sql<string>`lower(vehicle_brand)`, 'like', pattern),
           eb(sql<string>`lower(vehicle_model)`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(vehicle_variant, ''))`, 'like', pattern),
+          eb(
+            sql<string>`lower(coalesce(vehicle_variant, ''))`,
+            'like',
+            pattern,
+          ),
           eb(sql<string>`coalesce(vehicle_year::text, '')`, 'like', pattern),
         ]),
       );
@@ -370,6 +374,8 @@ export class SellerLeadsService {
             fileUrl: photo.file_url,
             sortOrder: photo.sort_order,
           })),
+          trackedCosts: [],
+          trackedCostsTotal: '0.00',
         }),
       };
     });
@@ -416,7 +422,9 @@ export class SellerLeadsService {
       case 'status':
         return { column: 'status' as const, direction };
       default:
-        throw new BadRequestException(`Unsupported seller lead sort: ${sortBy}`);
+        throw new BadRequestException(
+          `Unsupported seller lead sort: ${sortBy}`,
+        );
     }
   }
 
