@@ -10,7 +10,7 @@ import type { Kysely } from 'kysely';
 
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
-import type { User } from '../../database/schema';
+import type { RoleName, User } from '../../database/schema';
 import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
@@ -30,6 +30,11 @@ import {
   verifyPassword,
 } from '../../common/utils/auth.utils';
 import { CreateUserDto } from './dto/create-user.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
+
+const DEFAULT_STAFF_PASSWORD = '123456';
+const MIN_PASSWORD_LENGTH = 6;
 
 @Injectable()
 export class AuthService {
@@ -55,8 +60,14 @@ export class AuthService {
       .where('email', '=', email)
       .executeTakeFirst();
 
-    if (!user || !user.active) {
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.active) {
+      throw new UnauthorizedException(
+        'This account has been disabled by an admin. Please contact your administrator.',
+      );
     }
 
     const passwordMatches = await verifyPassword(password, user.password_hash);
@@ -113,6 +124,7 @@ export class AuthService {
         'auth.users.email as userEmail',
         'auth.users.full_name as userFullName',
         'auth.users.role as userRole',
+        'auth.users.must_change_password as userMustChangePassword',
         'auth.users.password_hash as userPasswordHash',
         'auth.users.active as userActive',
         'auth.users.must_change_password as userMustChangePassword',
@@ -143,6 +155,7 @@ export class AuthService {
       email: session.userEmail,
       full_name: session.userFullName,
       role: parseRole(session.userRole),
+      must_change_password: session.userMustChangePassword,
       password_hash: session.userPasswordHash,
       active: session.userActive,
       must_change_password: session.userMustChangePassword,
@@ -184,22 +197,21 @@ export class AuthService {
     createUserDto: CreateUserDto,
   ): Promise<{ user: CurrentUser }> {
     const email = createUserDto.email?.trim().toLowerCase();
-    const password = createUserDto.password;
-    const fullName = createUserDto.fullName?.trim();
+    const role = this.parseCreateUserRole(createUserDto.role);
+    const password = this.resolveCreateUserPassword(
+      createUserDto.password,
+      role,
+    );
+    const fullName =
+      createUserDto.fullName?.trim() || this.deriveFullNameFromEmail(email);
 
     if (!email) {
       throw new BadRequestException('email is required');
     }
 
-    if (!password) {
-      throw new BadRequestException('password is required');
-    }
-
     if (!fullName) {
       throw new BadRequestException('fullName is required');
     }
-
-    const role = parseRole(createUserDto.role);
 
     const existingUser = await this.db
       .selectFrom('auth.users')
@@ -218,11 +230,151 @@ export class AuthService {
         password_hash: await hashPassword(password),
         full_name: fullName,
         role,
+        must_change_password: role === 'staff',
       })
       .returningAll()
       .executeTakeFirstOrThrow();
 
     return { user: this.toCurrentUser(this.normalizeUser(insertedUser)) };
+  }
+
+  async listUsers(query: ListUsersQueryDto): Promise<{ users: CurrentUser[] }> {
+    const search = query.search?.trim();
+    const status = query.status?.trim();
+    let usersQuery = this.db
+      .selectFrom('auth.users')
+      .selectAll()
+      .where('role', '=', 'staff');
+
+    if (search) {
+      usersQuery = usersQuery.where((expressionBuilder) =>
+        expressionBuilder.or([
+          expressionBuilder('email', 'ilike', `%${search}%`),
+          expressionBuilder('full_name', 'ilike', `%${search}%`),
+        ]),
+      );
+    }
+
+    if (status) {
+      switch (status) {
+        case 'active':
+          usersQuery = usersQuery
+            .where('active', '=', true)
+            .where('must_change_password', '=', false);
+          break;
+        case 'disabled':
+          usersQuery = usersQuery.where('active', '=', false);
+          break;
+        case 'change_password_required':
+          usersQuery = usersQuery
+            .where('active', '=', true)
+            .where('must_change_password', '=', true);
+          break;
+        default:
+          throw new BadRequestException(
+            'status must be active, disabled, or change_password_required',
+          );
+      }
+    }
+
+    const users = await usersQuery.orderBy('created_at', 'asc').execute();
+
+    return {
+      users: users.map((user) => this.toCurrentUser(this.normalizeUser(user))),
+    };
+  }
+
+  async updateUserStatus(
+    userId: string,
+    updateUserStatusDto: { active: boolean },
+    currentUser: CurrentUser,
+  ): Promise<{ user: CurrentUser }> {
+    if (typeof updateUserStatusDto.active !== 'boolean') {
+      throw new BadRequestException('active must be a boolean');
+    }
+
+    if (userId === currentUser.id && updateUserStatusDto.active === false) {
+      throw new BadRequestException('You cannot disable your own account');
+    }
+
+    const existingUser = await this.db
+      .selectFrom('auth.users')
+      .selectAll()
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!existingUser) {
+      throw new BadRequestException('User not found');
+    }
+
+    if (existingUser.role !== 'staff') {
+      throw new BadRequestException('Only staff accounts can be updated here');
+    }
+
+    const updatedUser = await this.db
+      .updateTable('auth.users')
+      .set({
+        active: updateUserStatusDto.active,
+        updated_at: new Date(),
+      })
+      .where('id', '=', userId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    if (!updateUserStatusDto.active) {
+      await this.db
+        .deleteFrom('auth.sessions')
+        .where('user_id', '=', userId)
+        .execute();
+    }
+
+    return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
+  }
+
+  async changePassword(
+    currentUser: CurrentUser,
+    changePasswordDto: ChangePasswordDto,
+  ): Promise<{ user: CurrentUser }> {
+    const newPassword = changePasswordDto.newPassword;
+
+    if (!newPassword) {
+      throw new BadRequestException('New password is required');
+    }
+
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      throw new BadRequestException(
+        `New password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+      );
+    }
+
+    const user = await this.db
+      .selectFrom('auth.users')
+      .selectAll()
+      .where('id', '=', currentUser.id)
+      .executeTakeFirst();
+
+    if (!user || !user.active) {
+      throw new UnauthorizedException('Session is no longer valid');
+    }
+
+    if (await verifyPassword(newPassword, user.password_hash)) {
+      throw new BadRequestException(
+        'New password must be different from the current password',
+      );
+    }
+
+    const updatedUser = await this.db
+      .updateTable('auth.users')
+      .set({
+        password_hash: await hashPassword(newPassword),
+        must_change_password: false,
+        updated_at: new Date(),
+      })
+      .where('id', '=', currentUser.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
   }
 
   private async issueSessionTokens(
@@ -382,6 +534,8 @@ export class AuthService {
       email: user.email,
       fullName: user.full_name,
       role: user.role,
+      mustChangePassword: user.must_change_password,
+      active: user.active,
     };
   }
 
@@ -391,6 +545,7 @@ export class AuthService {
     password_hash: string;
     full_name: string;
     role: string;
+    must_change_password: boolean;
     active: boolean;
     must_change_password: boolean;
     created_at: Date;
@@ -400,6 +555,49 @@ export class AuthService {
       ...user,
       role: parseRole(user.role),
     };
+  }
+
+  private parseCreateUserRole(role: RoleName | undefined): RoleName {
+    if (!role) {
+      return 'staff';
+    }
+
+    try {
+      return parseRole(role);
+    } catch {
+      throw new BadRequestException('role must be either admin or staff');
+    }
+  }
+
+  private resolveCreateUserPassword(
+    password: string | undefined,
+    role: RoleName,
+  ): string {
+    if (password) {
+      return password;
+    }
+
+    if (role === 'staff') {
+      return DEFAULT_STAFF_PASSWORD;
+    }
+
+    throw new BadRequestException(
+      'password is required when creating an admin user',
+    );
+  }
+
+  private deriveFullNameFromEmail(email: string | undefined): string {
+    const localPart = email?.split('@')[0]?.trim();
+
+    if (!localPart) {
+      return '';
+    }
+
+    return localPart
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   }
 
   private get accessExpiresInMs(): number {
