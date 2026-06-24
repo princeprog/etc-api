@@ -392,6 +392,30 @@ export class FollowUpsService {
       .executeTakeFirstOrThrow();
 
     return Number(result.count);
+  private async writeLeadFollowUpActivity(
+    user: CurrentUser,
+    followUp: Awaited<ReturnType<FollowUpsService['getRecordOrThrow']>>,
+    action: 'scheduled' | 'completed',
+  ) {
+    const entityType = followUp.lead_type === 'buyer' ? 'buyer_lead' : 'seller_lead';
+    const entityId = followUp.lead_type === 'buyer' ? followUp.buyer_lead_id : followUp.seller_lead_id;
+
+    if (!entityId) {
+      return;
+    }
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType,
+      entityId,
+      actionType: `${entityType}.follow_up_${action}`,
+      summary: action === 'scheduled' ? 'Follow-up scheduled for lead' : 'Lead follow-up completed',
+      metadata: {
+        followUpId: followUp.id,
+        dueAt: followUp.due_at,
+        assigneeUserId: followUp.assignee_user_id,
+      },
+    });
   }
   private async writeLeadFollowUpActivity(
     user: CurrentUser,
