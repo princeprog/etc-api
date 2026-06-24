@@ -53,6 +53,13 @@ export interface SellerLeadInspectionFindings {
   electrical?: SellerLeadInspectionItem;
   papers?: SellerLeadInspectionItem;
 }
+export type ActivityEntityType =
+  | 'seller_lead'
+  | 'buyer_lead'
+  | 'vehicle'
+  | 'sale'
+  | 'follow_up'
+  | 'user';
 
 export interface UsersTable {
   id: Generated<string>;

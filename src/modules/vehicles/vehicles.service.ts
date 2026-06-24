@@ -558,6 +558,7 @@ export class VehiclesService {
     if (
       previous.brand !== next.brand ||
       previous.model !== next.model ||
+      previous.stock_number !== next.stockNumber ||
       previous.remarks !== next.remarks ||
       previous.features !== next.features
     ) {
@@ -566,6 +567,7 @@ export class VehiclesService {
         summary: 'Vehicle merchandising details updated',
         metadata: {
           changedFields: [
+            previous.stock_number !== next.stockNumber ? 'stockNumber' : null,
             previous.brand !== next.brand ? 'brand' : null,
             previous.model !== next.model ? 'model' : null,
             previous.remarks !== next.remarks ? 'remarks' : null,

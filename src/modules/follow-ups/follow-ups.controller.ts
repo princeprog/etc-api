@@ -10,7 +10,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
+import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { ListFollowUpsQueryDto } from './dto/list-follow-ups-query.dto';
@@ -23,8 +25,8 @@ export class FollowUpsController {
   constructor(private readonly followUpsService: FollowUpsService) {}
 
   @Post()
-  create(@Body() dto: CreateFollowUpDto) {
-    return this.followUpsService.create(dto);
+  create(@CurrentUser() user: CurrentUserType, @Body() dto: CreateFollowUpDto) {
+    return this.followUpsService.create(user, dto);
   }
 
   @Get()
@@ -50,7 +52,11 @@ export class FollowUpsController {
 
   @HttpCode(200)
   @Post(':id/complete')
-  complete(@Param('id') id: string, @Body() dto: CompleteFollowUpDto) {
-    return this.followUpsService.complete(id, dto);
+  complete(
+    @CurrentUser() user: CurrentUserType,
+    @Param('id') id: string,
+    @Body() dto: CompleteFollowUpDto,
+  ) {
+    return this.followUpsService.complete(user, id, dto);
   }
 }
