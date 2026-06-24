@@ -90,12 +90,20 @@ export class VehiclesService {
     let vehiclesQuery = this.db.selectFrom('inventory.vehicles').select(['id']);
 
     if (query?.status) {
-      vehiclesQuery = vehiclesQuery.where('status', '=', parseVehicleStatus(query.status, 'Incoming'));
+      vehiclesQuery = vehiclesQuery.where(
+        'status',
+        '=',
+        parseVehicleStatus(query.status, 'Incoming'),
+      );
     }
 
-    const vehicleIds = await vehiclesQuery.orderBy('created_at', 'desc').execute();
+    const vehicleIds = await vehiclesQuery
+      .orderBy('created_at', 'desc')
+      .execute();
 
-    const vehicles = await Promise.all(vehicleIds.map((vehicle) => this.getVehicleOrThrow(vehicle.id)));
+    const vehicles = await Promise.all(
+      vehicleIds.map((vehicle) => this.getVehicleOrThrow(vehicle.id)),
+    );
     return { vehicles };
   }
 
@@ -123,23 +131,35 @@ export class VehiclesService {
       year: updateVehicleDto.year ?? existingVehicle.year,
       variant: updateVehicleDto.variant ?? existingVehicle.variant,
       mileage: updateVehicleDto.mileage ?? existingVehicle.mileage,
-      transmission: updateVehicleDto.transmission ?? existingVehicle.transmission,
+      transmission:
+        updateVehicleDto.transmission ?? existingVehicle.transmission,
       fuelType: updateVehicleDto.fuelType ?? existingVehicle.fuel_type,
       color: updateVehicleDto.color ?? existingVehicle.color,
       region: updateVehicleDto.region ?? existingVehicle.region,
       features: updateVehicleDto.features ?? existingVehicle.features,
       remarks: updateVehicleDto.remarks ?? existingVehicle.remarks,
-      purchasePrice: updateVehicleDto.purchasePrice ?? existingVehicle.purchase_price,
+      purchasePrice:
+        updateVehicleDto.purchasePrice ?? existingVehicle.purchase_price,
       targetSellingPrice:
-        updateVehicleDto.targetSellingPrice ?? existingVehicle.target_selling_price,
+        updateVehicleDto.targetSellingPrice ??
+        existingVehicle.target_selling_price,
       minimumAcceptablePrice:
-        updateVehicleDto.minimumAcceptablePrice ?? existingVehicle.minimum_acceptable_price,
-      acquisitionSource: updateVehicleDto.acquisitionSource ?? existingVehicle.acquisition_source,
-      sellerLeadId: updateVehicleDto.sellerLeadId ?? existingVehicle.seller_lead_id,
-      status: updateVehicleDto.status ?? parseVehicleStatus(existingVehicle.status, 'Incoming'),
+        updateVehicleDto.minimumAcceptablePrice ??
+        existingVehicle.minimum_acceptable_price,
+      acquisitionSource:
+        updateVehicleDto.acquisitionSource ??
+        existingVehicle.acquisition_source,
+      sellerLeadId:
+        updateVehicleDto.sellerLeadId ?? existingVehicle.seller_lead_id,
+      status:
+        updateVehicleDto.status ??
+        parseVehicleStatus(existingVehicle.status, 'Incoming'),
       photos: updateVehicleDto.photos ?? existingPhotos,
     });
-    const removedPhotoPaths = this.getRemovedPhotoPaths(existingPhotos, model.photos);
+    const removedPhotoPaths = this.getRemovedPhotoPaths(
+      existingPhotos,
+      model.photos,
+    );
 
     const vehicle = await this.db.transaction().execute(async (trx) => {
       await trx
@@ -245,7 +265,10 @@ export class VehiclesService {
     return normalized;
   }
 
-  private async getVehicleOrThrow(id: string, executor?: Kysely<DB> | Transaction<DB>) {
+  private async getVehicleOrThrow(
+    id: string,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
     const db = executor ?? this.db;
     const vehicle = await db
       .selectFrom('inventory.vehicles')
@@ -274,7 +297,9 @@ export class VehiclesService {
       .selectFrom('inventory.vehicles')
       .select(['stock_number'])
       .where(sql<boolean>`stock_number ~ '^ETC-[0-9]{4}-[0-9]+$'`)
-      .where(sql<boolean>`split_part(stock_number, '-', 2)::integer = ${stockYear}`)
+      .where(
+        sql<boolean>`split_part(stock_number, '-', 2)::integer = ${stockYear}`,
+      )
       .orderBy(sql<number>`split_part(stock_number, '-', 3)::integer`, 'desc')
       .executeTakeFirst();
 
@@ -282,11 +307,16 @@ export class VehiclesService {
       return formatVehicleStockNumber(stockYear, 1);
     }
 
-    const latestSequence = Number(latestVehicleForYear.stock_number.split('-').at(-1) ?? '0');
+    const latestSequence = Number(
+      latestVehicleForYear.stock_number.split('-').at(-1) ?? '0',
+    );
     return formatVehicleStockNumber(stockYear, latestSequence + 1);
   }
 
-  private async getVehiclePhotos(id: string, executor?: Kysely<DB> | Transaction<DB>) {
+  private async getVehiclePhotos(
+    id: string,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
     const db = executor ?? this.db;
     const photos = await db
       .selectFrom('inventory.vehicle_photos')
@@ -301,8 +331,15 @@ export class VehiclesService {
     }));
   }
 
-  private async replacePhotos(trx: Transaction<DB>, vehicleId: string, photos: VehiclePhotoInput[]) {
-    await trx.deleteFrom('inventory.vehicle_photos').where('vehicle_id', '=', vehicleId).execute();
+  private async replacePhotos(
+    trx: Transaction<DB>,
+    vehicleId: string,
+    photos: VehiclePhotoInput[],
+  ) {
+    await trx
+      .deleteFrom('inventory.vehicle_photos')
+      .where('vehicle_id', '=', vehicleId)
+      .execute();
 
     if (photos.length === 0) {
       return;

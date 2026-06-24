@@ -4,8 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
+import { sql, type Kysely, type SelectQueryBuilder } from 'kysely';
 
 import {
   buildPaginatedResponse,
@@ -17,7 +16,16 @@ import type { DB } from '../../database/db';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { ListFollowUpsQueryDto } from './dto/list-follow-ups-query.dto';
-import { mapFollowUpResponse, parseFollowUpStatus, parseLeadType } from './follow-ups.helpers';
+import { UpdateFollowUpDto } from './dto/update-follow-up.dto';
+import {
+  deriveFollowUpStatus,
+  mapFollowUpResponse,
+  parseDueDate,
+  parseFollowUpStatus,
+  parseLeadType,
+  parseOptionalLeadType,
+  parseSort,
+} from './follow-ups.helpers';
 
 @Injectable()
 export class FollowUpsService {
@@ -41,7 +49,9 @@ export class FollowUpsService {
 
     if (leadType === 'buyer') {
       if (!dto.buyerLeadId || dto.sellerLeadId) {
-        throw new BadRequestException('buyer lead follow-up must include only buyerLeadId');
+        throw new BadRequestException(
+          'buyer lead follow-up must include only buyerLeadId',
+        );
       }
 
       await this.ensureBuyerLeadExists(dto.buyerLeadId);
@@ -49,11 +59,15 @@ export class FollowUpsService {
 
     if (leadType === 'seller') {
       if (!dto.sellerLeadId || dto.buyerLeadId) {
-        throw new BadRequestException('seller lead follow-up must include only sellerLeadId');
+        throw new BadRequestException(
+          'seller lead follow-up must include only sellerLeadId',
+        );
       }
 
       await this.ensureSellerLeadExists(dto.sellerLeadId);
     }
+
+    await this.ensureAssigneeExists(dto.assigneeUserId);
 
     const inserted = await this.db
       .insertInto('crm.follow_ups')
@@ -73,69 +87,130 @@ export class FollowUpsService {
   }
 
   async findAll(query: ListFollowUpsQueryDto = {}) {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
     const pagination = parsePagination(query);
-    const parsedStatus = parseFollowUpStatus(query.status);
-    const leadType = query.leadType ? parseLeadType(query.leadType) : undefined;
-    const assigneeUserId = query.assigneeUserId?.trim() || undefined;
+    const status = parseFollowUpStatus(query.status);
+    const leadType = parseOptionalLeadType(query.leadType);
+    const dueFrom = parseDueDate(query.dueFrom, 'dueFrom');
+    const dueTo = parseDueDate(query.dueTo, 'dueTo');
     const search = normalizeSearch(query.search);
-    const sort = this.parseSort(query.sortBy, query.sortOrder);
+    const sort = parseSort(query.sort);
 
-    let followUpsQuery = this.db
-      .selectFrom('crm.follow_ups')
-      .leftJoin('crm.seller_leads', 'crm.seller_leads.id', 'crm.follow_ups.seller_lead_id')
-      .leftJoin('crm.buyer_leads', 'crm.buyer_leads.id', 'crm.follow_ups.buyer_lead_id');
+    const filtered = this.db
+      .selectFrom('crm.follow_ups as fu')
+      .leftJoin('crm.seller_leads as sl', 'sl.id', 'fu.seller_lead_id')
+      .leftJoin('crm.buyer_leads as bl', 'bl.id', 'fu.buyer_lead_id')
+      .$if(status === 'Completed', (qb) =>
+        qb.where('fu.completed_at', 'is not', null),
+      )
+      .$if(status === 'Overdue', (qb) =>
+        qb.where('fu.completed_at', 'is', null).where('fu.due_at', '<', now),
+      )
+      .$if(status === 'Due', (qb) =>
+        qb.where('fu.completed_at', 'is', null).where('fu.due_at', '>=', now),
+      )
+      .$if(status === 'DueToday', (qb) =>
+        qb
+          .where('fu.completed_at', 'is', null)
+          .where('fu.due_at', '>=', todayStart)
+          .where('fu.due_at', '<', tomorrowStart),
+      )
+      .$if(Boolean(leadType), (qb) => qb.where('fu.lead_type', '=', leadType!))
+      .$if(Boolean(query.assigneeUserId), (qb) =>
+        qb.where('fu.assignee_user_id', '=', query.assigneeUserId!),
+      )
+      .$if(Boolean(dueFrom), (qb) => qb.where('fu.due_at', '>=', dueFrom!))
+      .$if(Boolean(dueTo), (qb) => qb.where('fu.due_at', '<=', dueTo!))
+      .$if(Boolean(search), (qb) => {
+        const pattern = `%${search}%`;
+        return qb.where((eb) =>
+          eb.or([
+            eb('fu.note', 'ilike', pattern),
+            eb('fu.outcome_note', 'ilike', pattern),
+            eb('sl.seller_name', 'ilike', pattern),
+            eb('bl.buyer_name', 'ilike', pattern),
+          ]),
+        );
+      });
 
-    if (parsedStatus === 'Overdue') {
-      followUpsQuery = followUpsQuery
-        .where('crm.follow_ups.completed_at', 'is', null)
-        .where('crm.follow_ups.due_at', '<', new Date());
-    } else if (parsedStatus === 'Due') {
-      followUpsQuery = followUpsQuery
-        .where('crm.follow_ups.status', '=', 'Due')
-        .where('crm.follow_ups.completed_at', 'is', null)
-        .where('crm.follow_ups.due_at', '>=', new Date());
-    } else if (parsedStatus === 'Completed') {
-      followUpsQuery = followUpsQuery.where('crm.follow_ups.status', '=', 'Completed');
-    }
-
-    if (leadType) {
-      followUpsQuery = followUpsQuery.where('crm.follow_ups.lead_type', '=', leadType);
-    }
-
-    if (assigneeUserId) {
-      followUpsQuery = followUpsQuery.where('crm.follow_ups.assignee_user_id', '=', assigneeUserId);
-    }
-
-    if (search) {
-      const pattern = `%${search.toLowerCase()}%`;
-      followUpsQuery = followUpsQuery.where(({ eb, or }) =>
-        or([
-          eb(sql<string>`lower(crm.follow_ups.note)`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(crm.follow_ups.outcome_note, ''))`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(crm.seller_leads.seller_name, ''))`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(crm.seller_leads.vehicle_brand, ''))`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(crm.seller_leads.vehicle_model, ''))`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(crm.buyer_leads.buyer_name, ''))`, 'like', pattern),
-          eb(sql<string>`lower(coalesce(crm.buyer_leads.contact_number, ''))`, 'like', pattern),
-        ]),
-      );
-    }
-
-    const totalRow = await followUpsQuery
-      .select(({ fn }) => fn.countAll<number>().as('count'))
+    const totalRow = await filtered
+      .select(({ fn }) => fn.countAll<string>().as('count'))
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
 
-    const followUps = await followUpsQuery
-      .select('crm.follow_ups.id as id')
-      .orderBy(sort.column, sort.direction)
-      .orderBy('crm.follow_ups.created_at', 'asc')
-      .offset(pagination.offset)
+    const baseSort = sort.replace(/^-/, '');
+    const sortDirection = sort.startsWith('-') ? 'desc' : 'asc';
+
+    const sortExpression = (() => {
+      switch (baseSort) {
+        case 'note':
+          return sql`fu.note`;
+        case 'leadType':
+          return sql`fu.lead_type`;
+        case 'leadName':
+          return sql`COALESCE(sl.seller_name, bl.buyer_name)`;
+        case 'status':
+          return sql`CASE WHEN fu.completed_at IS NOT NULL THEN 2 WHEN fu.due_at < ${now} THEN 0 ELSE 1 END`;
+        case 'updatedAt':
+          return sql`fu.updated_at`;
+        case 'dueAt':
+        default:
+          return sql`fu.due_at`;
+      }
+    })();
+
+    const rows = await filtered
+      .select([
+        'fu.id',
+        'fu.lead_type',
+        'fu.seller_lead_id',
+        'fu.buyer_lead_id',
+        'fu.assignee_user_id',
+        'fu.due_at',
+        'fu.completed_at',
+        'fu.status',
+        'fu.note',
+        'fu.outcome_note',
+        'fu.created_at',
+        'fu.updated_at',
+        'sl.seller_name',
+        'sl.vehicle_brand',
+        'sl.vehicle_model',
+        'bl.buyer_name',
+        'bl.contact_number',
+      ])
+      .orderBy(sortExpression, sortDirection)
+      .orderBy('fu.id', 'asc')
       .limit(pagination.pageSize)
+      .offset(pagination.offset)
       .execute();
 
-    const hydrated = await Promise.all(followUps.map((followUp) => this.getFollowUpOrThrow(followUp.id)));
-    const response = buildPaginatedResponse(hydrated, pagination, total);
+    const followUps = rows.map((row) => {
+      const rowLeadType = parseLeadType(row.lead_type);
+      const leadName =
+        rowLeadType === 'seller' ? row.seller_name : row.buyer_name;
+      const leadSecondary =
+        rowLeadType === 'seller'
+          ? [row.vehicle_brand, row.vehicle_model].filter(Boolean).join(' ') ||
+            null
+          : row.contact_number;
+
+      return mapFollowUpResponse({
+        ...row,
+        lead_type: rowLeadType,
+        status: deriveFollowUpStatus(row.completed_at, row.due_at, now),
+        lead_name: leadName,
+        lead_secondary: leadSecondary,
+      });
+    });
+
+    const response = buildPaginatedResponse(followUps, pagination, total);
 
     return {
       followUps: response.items,
@@ -146,7 +221,102 @@ export class FollowUpsService {
     };
   }
 
+  async summary(assigneeUserId?: string) {
+    const now = new Date();
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const tomorrowStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
+    const upcomingHorizon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const scoped = () =>
+      this.db
+        .selectFrom('crm.follow_ups')
+        .$if(Boolean(assigneeUserId), (qb) =>
+          qb.where('assignee_user_id', '=', assigneeUserId!),
+        );
+
+    const [overdue, dueToday, upcoming, completed] = await Promise.all([
+      this.countFollowUps(
+        scoped().where('completed_at', 'is', null).where('due_at', '<', now),
+      ),
+      this.countFollowUps(
+        scoped()
+          .where('completed_at', 'is', null)
+          .where('due_at', '>=', todayStart)
+          .where('due_at', '<', tomorrowStart),
+      ),
+      this.countFollowUps(
+        scoped()
+          .where('completed_at', 'is', null)
+          .where('due_at', '>', now)
+          .where('due_at', '<=', upcomingHorizon),
+      ),
+      this.countFollowUps(scoped().where('completed_at', 'is not', null)),
+    ]);
+
+    return { summary: { overdue, dueToday, upcoming, completed } };
+  }
+
   async findOne(id: string) {
+    return { followUp: await this.getFollowUpOrThrow(id) };
+  }
+
+  async update(id: string, dto: UpdateFollowUpDto) {
+    const followUp = await this.getRecordOrThrow(id);
+
+    if (followUp.completed_at) {
+      throw new BadRequestException('Completed follow-ups cannot be edited');
+    }
+
+    const updateValues: {
+      due_at?: Date;
+      note?: string;
+      assignee_user_id?: string;
+      updated_at: Date;
+    } = { updated_at: new Date() };
+
+    if (dto.dueAt !== undefined) {
+      const dueAt = parseDueDate(dto.dueAt, 'dueAt');
+
+      if (!dueAt) {
+        throw new BadRequestException('dueAt cannot be empty');
+      }
+
+      updateValues.due_at = dueAt;
+    }
+
+    if (dto.note !== undefined) {
+      const note = dto.note?.trim();
+
+      if (!note) {
+        throw new BadRequestException('note cannot be empty');
+      }
+
+      updateValues.note = note;
+    }
+
+    if (dto.assigneeUserId !== undefined) {
+      if (!dto.assigneeUserId) {
+        throw new BadRequestException('assigneeUserId cannot be empty');
+      }
+
+      await this.ensureAssigneeExists(dto.assigneeUserId);
+      updateValues.assignee_user_id = dto.assigneeUserId;
+    }
+
+    await this.db
+      .updateTable('crm.follow_ups')
+      .set(updateValues)
+      .where('id', '=', id)
+      .execute();
+
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
 
@@ -176,15 +346,24 @@ export class FollowUpsService {
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
 
+  private async countFollowUps(
+    query: SelectQueryBuilder<DB, 'crm.follow_ups', object>,
+  ): Promise<number> {
+    const result = await query
+      .select(({ fn }) => fn.countAll<string>().as('count'))
+      .executeTakeFirstOrThrow();
+
+    return Number(result.count);
+  }
+
   private async getFollowUpOrThrow(id: string) {
     const followUp = await this.getRecordOrThrow(id);
-    const computedStatus =
-      !followUp.completed_at && followUp.due_at < new Date() ? 'Overdue' : followUp.status;
+    const now = new Date();
 
     return mapFollowUpResponse({
       ...followUp,
       lead_type: parseLeadType(followUp.lead_type),
-      status: parseFollowUpStatus(computedStatus) ?? 'Due',
+      status: deriveFollowUpStatus(followUp.completed_at, followUp.due_at, now),
     });
   }
 
@@ -226,33 +405,15 @@ export class FollowUpsService {
     }
   }
 
-  private parseSort(sortBy?: string, sortOrder?: string) {
-    const direction = this.parseSortOrder(sortOrder);
+  private async ensureAssigneeExists(id: string) {
+    const user = await this.db
+      .selectFrom('auth.users')
+      .select(['id'])
+      .where('id', '=', id)
+      .executeTakeFirst();
 
-    switch (sortBy) {
-      case undefined:
-      case 'dueAt':
-        return { column: 'crm.follow_ups.due_at' as const, direction };
-      case 'createdAt':
-        return { column: 'crm.follow_ups.created_at' as const, direction };
-      case 'updatedAt':
-        return { column: 'crm.follow_ups.updated_at' as const, direction };
-      case 'status':
-        return { column: 'crm.follow_ups.status' as const, direction };
-      default:
-        throw new BadRequestException(`Unsupported follow-up sort: ${sortBy}`);
+    if (!user) {
+      throw new NotFoundException(`Assignee ${id} was not found`);
     }
-  }
-
-  private parseSortOrder(sortOrder?: string): 'asc' | 'desc' {
-    if (!sortOrder || sortOrder === 'asc') {
-      return 'asc';
-    }
-
-    if (sortOrder === 'desc') {
-      return 'desc';
-    }
-
-    throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
   }
 }

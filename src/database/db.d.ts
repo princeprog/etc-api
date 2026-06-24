@@ -3,11 +3,12 @@
  * Please do not edit it manually.
  */
 
-import type { ColumnType } from "kysely";
+import type { ColumnType } from 'kysely';
 
-export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
-  ? ColumnType<S, I | undefined, U>
-  : ColumnType<T, T | undefined, T>;
+export type Generated<T> =
+  T extends ColumnType<infer S, infer I, infer U>
+    ? ColumnType<S, I | undefined, U>
+    : ColumnType<T, T | undefined, T>;
 
 export type Numeric = ColumnType<string, number | string, number | string>;
 
@@ -169,15 +170,15 @@ export interface SalesSales {
 }
 
 export interface DB {
-  "auth.sessions": AuthSessions;
-  "auth.users": AuthUsers;
-  "crm.buyer_leads": CrmBuyerLeads;
-  "crm.follow_ups": CrmFollowUps;
-  "crm.lead_activities": CrmLeadActivities;
-  "crm.lead_vehicle_links": CrmLeadVehicleLinks;
-  "crm.seller_leads": CrmSellerLeads;
-  "inventory.vehicle_photos": InventoryVehiclePhotos;
-  "inventory.vehicles": InventoryVehicles;
-  "sales.commissions": SalesCommissions;
-  "sales.sales": SalesSales;
+  'auth.sessions': AuthSessions;
+  'auth.users': AuthUsers;
+  'crm.buyer_leads': CrmBuyerLeads;
+  'crm.follow_ups': CrmFollowUps;
+  'crm.lead_activities': CrmLeadActivities;
+  'crm.lead_vehicle_links': CrmLeadVehicleLinks;
+  'crm.seller_leads': CrmSellerLeads;
+  'inventory.vehicle_photos': InventoryVehiclePhotos;
+  'inventory.vehicles': InventoryVehicles;
+  'sales.commissions': SalesCommissions;
+  'sales.sales': SalesSales;
 }

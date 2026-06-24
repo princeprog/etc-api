@@ -1,4 +1,10 @@
-import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual, createHash } from 'node:crypto';
+import {
+  randomBytes,
+  randomUUID,
+  scrypt as scryptCallback,
+  timingSafeEqual,
+  createHash,
+} from 'node:crypto';
 import { promisify } from 'node:util';
 
 import type { RoleName } from '../../database/schema';
@@ -11,7 +17,10 @@ export async function hashPassword(password: string): Promise<string> {
   return `${salt}:${derivedKey.toString('hex')}`;
 }
 
-export async function verifyPassword(password: string, passwordHash: string): Promise<boolean> {
+export async function verifyPassword(
+  password: string,
+  passwordHash: string,
+): Promise<boolean> {
   const [salt, storedHash] = passwordHash.split(':');
 
   if (!salt || !storedHash) {

@@ -47,7 +47,10 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('crm.buyer_leads').execute();
     await db.deleteFrom('crm.seller_leads').execute();
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', '=', ADMIN_EMAIL).execute();
+    await db
+      .deleteFrom('auth.users')
+      .where('email', '=', ADMIN_EMAIL)
+      .execute();
 
     const user = await db
       .insertInto('auth.users')
@@ -207,7 +210,10 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('crm.buyer_leads').execute();
     await db.deleteFrom('crm.seller_leads').execute();
     await db.deleteFrom('auth.sessions').execute();
-    await db.deleteFrom('auth.users').where('email', '=', ADMIN_EMAIL).execute();
+    await db
+      .deleteFrom('auth.users')
+      .where('email', '=', ADMIN_EMAIL)
+      .execute();
     await app.close();
   });
 
@@ -735,8 +741,13 @@ async function createSale(
     .expect(201);
 }
 
-function extractCookie(rawCookies: string[] | undefined, cookieName: string): string {
-  const cookie = rawCookies?.find((value) => value.startsWith(`${cookieName}=`));
+function extractCookie(
+  rawCookies: string[] | undefined,
+  cookieName: string,
+): string {
+  const cookie = rawCookies?.find((value) =>
+    value.startsWith(`${cookieName}=`),
+  );
 
   if (!cookie) {
     throw new Error(`Missing cookie ${cookieName}`);

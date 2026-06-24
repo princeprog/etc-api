@@ -1,7 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 
 import type { VehicleStatus } from '../../database/schema';
-import type { VehiclePhotoInput, VehicleResponse, VehicleWriteModel } from './vehicles.types';
+import type {
+  VehiclePhotoInput,
+  VehicleResponse,
+  VehicleWriteModel,
+} from './vehicles.types';
 
 const VEHICLE_STATUSES: VehicleStatus[] = [
   'Incoming',
@@ -15,7 +19,9 @@ export function formatVehicleStockNumber(year: number, sequence: number) {
   return `ETC-${year}-${String(sequence).padStart(3, '0')}`;
 }
 
-export function normalizeVehiclePhotos(photos: VehiclePhotoInput[] | undefined): VehiclePhotoInput[] {
+export function normalizeVehiclePhotos(
+  photos: VehiclePhotoInput[] | undefined,
+): VehiclePhotoInput[] {
   return (photos ?? []).map((photo, index) => {
     const fileUrl = photo.fileUrl?.trim();
 
@@ -30,7 +36,10 @@ export function normalizeVehiclePhotos(photos: VehiclePhotoInput[] | undefined):
   });
 }
 
-export function parseVehicleStatus(value: string | undefined, fallback: VehicleStatus): VehicleStatus {
+export function parseVehicleStatus(
+  value: string | undefined,
+  fallback: VehicleStatus,
+): VehicleStatus {
   if (!value) {
     return fallback;
   }
@@ -44,7 +53,9 @@ export function parseVehicleStatus(value: string | undefined, fallback: VehicleS
 
 export function validateVehicleAvailability(model: VehicleWriteModel): void {
   if (model.status === 'Sold') {
-    throw new BadRequestException('Vehicles can only move to Sold through the sales finalization workflow');
+    throw new BadRequestException(
+      'Vehicles can only move to Sold through the sales finalization workflow',
+    );
   }
 
   if (model.status !== 'Available') {
@@ -64,7 +75,9 @@ export function validateVehicleAvailability(model: VehicleWriteModel): void {
   }
 
   if (model.photos.length === 0) {
-    throw new BadRequestException('At least one photo is required before moving a vehicle to Available');
+    throw new BadRequestException(
+      'At least one photo is required before moving a vehicle to Available',
+    );
   }
 }
 

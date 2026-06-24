@@ -28,7 +28,10 @@ export class BuyerLeadsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateBuyerLeadDto: UpdateBuyerLeadDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateBuyerLeadDto: UpdateBuyerLeadDto,
+  ) {
     return this.buyerLeadsService.update(id, updateBuyerLeadDto);
   }
 
@@ -38,7 +41,10 @@ export class BuyerLeadsController {
   }
 
   @Delete(':id/vehicle-links/:vehicleId')
-  unlinkVehicle(@Param('id') id: string, @Param('vehicleId') vehicleId: string) {
+  unlinkVehicle(
+    @Param('id') id: string,
+    @Param('vehicleId') vehicleId: string,
+  ) {
     return this.buyerLeadsService.unlinkVehicle(id, vehicleId);
   }
 }

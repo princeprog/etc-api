@@ -16,7 +16,9 @@ async function bootstrapAdmin() {
       .executeTakeFirstOrThrow();
 
     if (Number(existingUsers.count) > 0) {
-      throw new Error('Bootstrap admin creation is disabled because auth.users already contains records');
+      throw new Error(
+        'Bootstrap admin creation is disabled because auth.users already contains records',
+      );
     }
 
     const email = requireEnv('BOOTSTRAP_ADMIN_EMAIL').trim().toLowerCase();
@@ -68,7 +70,8 @@ function requireEnv(name: string) {
 }
 
 bootstrapAdmin().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : 'Unknown bootstrap admin error';
+  const message =
+    error instanceof Error ? error.message : 'Unknown bootstrap admin error';
   console.error(message);
   process.exitCode = 1;
 });

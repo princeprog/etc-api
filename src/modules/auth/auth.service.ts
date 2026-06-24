@@ -11,10 +11,24 @@ import type { Kysely } from 'kysely';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { User } from '../../database/schema';
-import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '../../common/constants/auth.constants';
+import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+} from '../../common/constants/auth.constants';
 import type { LoginDto } from './dto/login.dto';
-import type { AuthTokenPayload, CurrentUser, RefreshTokenPayload } from '../../common/types/auth.types';
-import { durationToMs, generateTokenId, hashPassword, hashToken, parseRole, verifyPassword } from '../../common/utils/auth.utils';
+import type {
+  AuthTokenPayload,
+  CurrentUser,
+  RefreshTokenPayload,
+} from '../../common/types/auth.types';
+import {
+  durationToMs,
+  generateTokenId,
+  hashPassword,
+  hashToken,
+  parseRole,
+  verifyPassword,
+} from '../../common/utils/auth.utils';
 import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
@@ -24,7 +38,10 @@ export class AuthService {
     @Inject(DATABASE) private readonly db: Kysely<DB>,
   ) {}
 
-  async login(loginDto: LoginDto, response: Response): Promise<{ user: CurrentUser }> {
+  async login(
+    loginDto: LoginDto,
+    response: Response,
+  ): Promise<{ user: CurrentUser }> {
     const email = loginDto.email?.trim().toLowerCase();
     const password = loginDto.password;
 
@@ -58,7 +75,10 @@ export class AuthService {
     return { user };
   }
 
-  async refresh(refreshToken: string | undefined, response: Response): Promise<{ user: CurrentUser }> {
+  async refresh(
+    refreshToken: string | undefined,
+    response: Response,
+  ): Promise<{ user: CurrentUser }> {
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required');
     }
@@ -66,9 +86,12 @@ export class AuthService {
     let payload: RefreshTokenPayload;
 
     try {
-      payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET,
-      });
+      payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
+        refreshToken,
+        {
+          secret: process.env.JWT_REFRESH_SECRET,
+        },
+      );
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -129,13 +152,19 @@ export class AuthService {
     return { user: this.toCurrentUser(user) };
   }
 
-  async logout(refreshToken: string | undefined, response: Response): Promise<{ success: true }> {
+  async logout(
+    refreshToken: string | undefined,
+    response: Response,
+  ): Promise<{ success: true }> {
     if (refreshToken) {
       try {
-        const payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(refreshToken, {
-          secret: process.env.JWT_REFRESH_SECRET,
-          ignoreExpiration: true,
-        });
+        const payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
+          refreshToken,
+          {
+            secret: process.env.JWT_REFRESH_SECRET,
+            ignoreExpiration: true,
+          },
+        );
 
         if (payload.type === 'refresh') {
           await this.revokeSession(payload.sessionId);
@@ -149,7 +178,9 @@ export class AuthService {
     return { success: true };
   }
 
-  async createUser(createUserDto: CreateUserDto): Promise<{ user: CurrentUser }> {
+  async createUser(
+    createUserDto: CreateUserDto,
+  ): Promise<{ user: CurrentUser }> {
     const email = createUserDto.email?.trim().toLowerCase();
     const password = createUserDto.password;
     const fullName = createUserDto.fullName?.trim();
@@ -192,10 +223,16 @@ export class AuthService {
     return { user: this.toCurrentUser(this.normalizeUser(insertedUser)) };
   }
 
-  private async issueSessionTokens(user: User, response: Response): Promise<void> {
+  private async issueSessionTokens(
+    user: User,
+    response: Response,
+  ): Promise<void> {
     const accessTokenJti = generateTokenId();
     const refreshExpiresAt = new Date(Date.now() + this.refreshExpiresInMs);
-    const refreshToken = await this.signRefreshToken(user.id, 'pending-session');
+    const refreshToken = await this.signRefreshToken(
+      user.id,
+      'pending-session',
+    );
     const refreshTokenHash = hashToken(refreshToken);
 
     const session = await this.db
@@ -211,7 +248,11 @@ export class AuthService {
 
     const finalRefreshToken = await this.signRefreshToken(user.id, session.id);
     const finalRefreshTokenHash = hashToken(finalRefreshToken);
-    const accessToken = await this.signAccessToken(user, session.id, accessTokenJti);
+    const accessToken = await this.signAccessToken(
+      user,
+      session.id,
+      accessTokenJti,
+    );
 
     await this.db
       .updateTable('auth.sessions')
@@ -225,10 +266,18 @@ export class AuthService {
     this.setAuthCookies(response, accessToken, finalRefreshToken);
   }
 
-  private async rotateSessionTokens(user: User, sessionId: string, response: Response): Promise<void> {
+  private async rotateSessionTokens(
+    user: User,
+    sessionId: string,
+    response: Response,
+  ): Promise<void> {
     const nextAccessTokenJti = generateTokenId();
     const nextRefreshToken = await this.signRefreshToken(user.id, sessionId);
-    const nextAccessToken = await this.signAccessToken(user, sessionId, nextAccessTokenJti);
+    const nextAccessToken = await this.signAccessToken(
+      user,
+      sessionId,
+      nextAccessTokenJti,
+    );
 
     await this.db
       .updateTable('auth.sessions')
@@ -257,7 +306,11 @@ export class AuthService {
       .execute();
   }
 
-  private async signAccessToken(user: User, sessionId: string, tokenId: string): Promise<string> {
+  private async signAccessToken(
+    user: User,
+    sessionId: string,
+    tokenId: string,
+  ): Promise<string> {
     const payload: AuthTokenPayload = {
       type: 'access',
       sub: user.id,
@@ -272,7 +325,10 @@ export class AuthService {
     });
   }
 
-  private async signRefreshToken(userId: string, sessionId: string): Promise<string> {
+  private async signRefreshToken(
+    userId: string,
+    sessionId: string,
+  ): Promise<string> {
     const payload: RefreshTokenPayload = {
       type: 'refresh',
       sub: userId,
@@ -286,9 +342,21 @@ export class AuthService {
     });
   }
 
-  private setAuthCookies(response: Response, accessToken: string, refreshToken: string): void {
-    response.cookie(ACCESS_TOKEN_COOKIE, accessToken, this.cookieOptions(this.accessExpiresInMs));
-    response.cookie(REFRESH_TOKEN_COOKIE, refreshToken, this.cookieOptions(this.refreshExpiresInMs));
+  private setAuthCookies(
+    response: Response,
+    accessToken: string,
+    refreshToken: string,
+  ): void {
+    response.cookie(
+      ACCESS_TOKEN_COOKIE,
+      accessToken,
+      this.cookieOptions(this.accessExpiresInMs),
+    );
+    response.cookie(
+      REFRESH_TOKEN_COOKIE,
+      refreshToken,
+      this.cookieOptions(this.refreshExpiresInMs),
+    );
   }
 
   clearAuthCookies(response: Response): void {

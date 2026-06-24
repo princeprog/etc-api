@@ -28,12 +28,18 @@ export class SellerLeadsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateSellerLeadDto: UpdateSellerLeadDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateSellerLeadDto: UpdateSellerLeadDto,
+  ) {
     return this.sellerLeadsService.update(id, updateSellerLeadDto);
   }
 
   @Post(':id/convert')
-  convert(@Param('id') id: string, @Body() convertSellerLeadDto: ConvertSellerLeadDto) {
+  convert(
+    @Param('id') id: string,
+    @Body() convertSellerLeadDto: ConvertSellerLeadDto,
+  ) {
     return this.sellerLeadsService.convert(id, convertSellerLeadDto);
   }
 }

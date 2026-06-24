@@ -27,7 +27,9 @@ interface UploadedImageFile {
 @Controller('uploads')
 @UseGuards(AccessTokenGuard)
 export class UploadsController {
-  constructor(private readonly localFileStorageService: LocalFileStorageService) {}
+  constructor(
+    private readonly localFileStorageService: LocalFileStorageService,
+  ) {}
 
   @Post('vehicle-photos')
   @UseInterceptors(
@@ -47,7 +49,9 @@ export class UploadsController {
     }
 
     if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      throw new BadRequestException('Only JPG, JPEG, PNG, and WEBP images are allowed');
+      throw new BadRequestException(
+        'Only JPG, JPEG, PNG, and WEBP images are allowed',
+      );
     }
 
     const storedFile = await this.localFileStorageService.saveUserFile({

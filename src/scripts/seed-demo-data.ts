@@ -99,24 +99,34 @@ function buildSellerLeads(assigneeUserId: string | null, now: Date) {
     ['Grace Serrano', 'Toyota', 'Innova', 2020, 'E Diesel AT', '1085000.00', 'Cebu', 'Referral'],
   ] as const;
 
-  return samples.map(([sellerName, brand, model, year, variant, askingPrice, region, source], index) => ({
-    seller_name: sellerName,
-    contact_number: `0917${String(1000000 + index).slice(-7)}`,
-    email: `seller${index + 1}@example.com`,
-    facebook_name: `${sellerName} Cars`,
-    inquiry_source: source,
-    vehicle_brand: brand,
-    vehicle_model: model,
-    vehicle_year: year,
-    vehicle_variant: variant,
-    asking_price: askingPrice,
-    region,
-    notes: `Demo seller lead ${index + 1} for ${brand} ${model}`,
-    status: index < 4 ? 'New Inquiry' : index < 7 ? 'Contacted' : 'Inspection Scheduled',
-    assignee_user_id: assigneeUserId,
-    latest_activity_at: now,
-    closing_note: null,
-  }));
+  return samples.map(
+    (
+      [sellerName, brand, model, year, variant, askingPrice, region, source],
+      index,
+    ) => ({
+      seller_name: sellerName,
+      contact_number: `0917${String(1000000 + index).slice(-7)}`,
+      email: `seller${index + 1}@example.com`,
+      facebook_name: `${sellerName} Cars`,
+      inquiry_source: source,
+      vehicle_brand: brand,
+      vehicle_model: model,
+      vehicle_year: year,
+      vehicle_variant: variant,
+      asking_price: askingPrice,
+      region,
+      notes: `Demo seller lead ${index + 1} for ${brand} ${model}`,
+      status:
+        index < 4
+          ? 'New Inquiry'
+          : index < 7
+            ? 'Contacted'
+            : 'Inspection Scheduled',
+      assignee_user_id: assigneeUserId,
+      latest_activity_at: now,
+      closing_note: null,
+    }),
+  );
 }
 
 function buildBuyerLeads(assigneeUserId: string | null, now: Date) {
@@ -260,7 +270,8 @@ function requireEnv(name: string) {
 }
 
 seedDemoData().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : 'Unknown demo seed error';
+  const message =
+    error instanceof Error ? error.message : 'Unknown demo seed error';
   console.error(message);
   process.exitCode = 1;
 });

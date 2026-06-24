@@ -11,7 +11,11 @@ import type { Kysely } from 'kysely';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ACCESS_TOKEN_COOKIE } from '../constants/auth.constants';
-import type { AuthenticatedRequest, AuthTokenPayload, CurrentUser } from '../types/auth.types';
+import type {
+  AuthenticatedRequest,
+  AuthTokenPayload,
+  CurrentUser,
+} from '../types/auth.types';
 import { parseRole } from '../utils/auth.utils';
 
 @Injectable()
@@ -32,9 +36,12 @@ export class AccessTokenGuard implements CanActivate {
     let payload: AuthTokenPayload;
 
     try {
-      payload = await this.jwtService.verifyAsync<AuthTokenPayload>(accessToken, {
-        secret: process.env.JWT_ACCESS_SECRET,
-      });
+      payload = await this.jwtService.verifyAsync<AuthTokenPayload>(
+        accessToken,
+        {
+          secret: process.env.JWT_ACCESS_SECRET,
+        },
+      );
     } catch {
       throw new UnauthorizedException('Invalid or expired access token');
     }
@@ -68,7 +75,10 @@ export class AccessTokenGuard implements CanActivate {
       throw new UnauthorizedException('Session is no longer valid');
     }
 
-    if (session.currentAccessTokenJti !== payload.jti || session.userId !== payload.sub) {
+    if (
+      session.currentAccessTokenJti !== payload.jti ||
+      session.userId !== payload.sub
+    ) {
       throw new UnauthorizedException('Access token has been revoked');
     }
 

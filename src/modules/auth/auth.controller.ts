@@ -41,7 +41,10 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    return this.authService.refresh(request.cookies?.[REFRESH_TOKEN_COOKIE], response);
+    return this.authService.refresh(
+      request.cookies?.[REFRESH_TOKEN_COOKIE],
+      response,
+    );
   }
 
   @Post('logout')
@@ -49,7 +52,10 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    return this.authService.logout(request.cookies?.[REFRESH_TOKEN_COOKIE], response);
+    return this.authService.logout(
+      request.cookies?.[REFRESH_TOKEN_COOKIE],
+      response,
+    );
   }
 
   @UseGuards(AccessTokenGuard, RolesGuard)
