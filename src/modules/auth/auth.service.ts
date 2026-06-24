@@ -162,7 +162,6 @@ export class AuthService {
       role: parseRole(session.userRole),
       password_hash: session.userPasswordHash,
       active: session.userActive,
-      must_change_password: session.userMustChangePassword,
       created_at: session.userCreatedAt,
       updated_at: session.userUpdatedAt,
     };
