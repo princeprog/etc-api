@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import type { ActivityEntityType } from '../../database/schema';
+import { ListActivityHistoryQueryDto } from './dto/list-activity-history-query.dto';
 import { ActivityHistoryService } from './activity-history.service';
 
 @UseGuards(AccessTokenGuard)
@@ -10,20 +11,16 @@ export class ActivityHistoryController {
   constructor(private readonly activityHistoryService: ActivityHistoryService) {}
 
   @Get()
-  listAll(@Query('limit') limit?: string) {
-    return this.activityHistoryService.listAll(limit ? Number(limit) : undefined);
+  listAll(@Query() query: ListActivityHistoryQueryDto) {
+    return this.activityHistoryService.listAll(query);
   }
 
   @Get(':entityType/:entityId')
   listForEntity(
     @Param('entityType') entityType: ActivityEntityType,
     @Param('entityId') entityId: string,
-    @Query('limit') limit?: string,
+    @Query() query: ListActivityHistoryQueryDto,
   ) {
-    return this.activityHistoryService.listForEntity(
-      entityType,
-      entityId,
-      limit ? Number(limit) : undefined,
-    );
+    return this.activityHistoryService.listForEntity(entityType, entityId, query);
   }
 }

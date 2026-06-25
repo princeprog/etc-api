@@ -35,6 +35,7 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
   });
 
   beforeEach(async () => {
+    await db.deleteFrom('ops.activity_history').execute();
     await db.deleteFrom('sales.commissions').execute();
     await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('crm.follow_ups').execute();
@@ -106,6 +107,7 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
   });
 
   afterAll(async () => {
+    await db.deleteFrom('ops.activity_history').execute();
     await db.deleteFrom('sales.commissions').execute();
     await db.deleteFrom('sales.sales').execute();
     await db.deleteFrom('crm.follow_ups').execute();
@@ -525,6 +527,99 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         outcomeNote: 'Second completion should fail',
       })
       .expect(400);
+  });
+
+  it('paginates entity and global activity history responses while keeping events in the payload', async () => {
+    const firstLeadResponse = await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Activity Buyer One',
+        contactNumber: '09170020001',
+        assigneeUserId: await currentUserId(app),
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/buyer-leads/${firstLeadResponse.body.buyerLead.id}`)
+      .set('Cookie', authCookies)
+      .send({
+        status: 'Contacted',
+        assigneeUserId: firstLeadResponse.body.buyerLead.assigneeUserId,
+        notes: 'Reached out for activity timeline test',
+      })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Activity Buyer Two',
+        contactNumber: '09170020002',
+        assigneeUserId: await currentUserId(app),
+      })
+      .expect(201);
+
+    const entityHistoryResponse = await request(app.getHttpServer())
+      .get(`/activity-history/buyer_lead/${firstLeadResponse.body.buyerLead.id}?page=1&pageSize=2`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(entityHistoryResponse.body).toEqual(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 2,
+        total: 3,
+        totalPages: 2,
+        events: expect.any(Array),
+      }),
+    );
+    expect(entityHistoryResponse.body.events).toHaveLength(2);
+    expect(entityHistoryResponse.body.events[0]).toEqual(
+      expect.objectContaining({
+        entityType: 'buyer_lead',
+        entityId: firstLeadResponse.body.buyerLead.id,
+      }),
+    );
+
+    const globalHistoryResponse = await request(app.getHttpServer())
+      .get('/activity-history?page=2&pageSize=2')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(globalHistoryResponse.body).toEqual(
+      expect.objectContaining({
+        page: 2,
+        pageSize: 2,
+        total: 4,
+        totalPages: 2,
+        events: expect.any(Array),
+      }),
+    );
+    expect(globalHistoryResponse.body.events).toHaveLength(2);
+    expect(globalHistoryResponse.body.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityId: firstLeadResponse.body.buyerLead.id,
+          entityType: 'buyer_lead',
+        }),
+      ]),
+    );
+
+    const legacyLimitResponse = await request(app.getHttpServer())
+      .get(`/activity-history/buyer_lead/${firstLeadResponse.body.buyerLead.id}?limit=1`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(legacyLimitResponse.body).toEqual(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 1,
+        total: 3,
+        totalPages: 3,
+      }),
+    );
+    expect(legacyLimitResponse.body.events).toHaveLength(1);
   });
 });
 
