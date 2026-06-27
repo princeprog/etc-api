@@ -450,21 +450,41 @@ export interface CrmLeadVehicleLinks {
   vehicle_id: string;
 }
 
+export interface CrmSellerLeadEstimatedCosts {
+  amount: Numeric;
+  category: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  note: string;
+  seller_lead_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface CrmSellerLeads {
+  approved_by_user_id: string | null;
+  approved_to_buy_at: Timestamp | null;
   asking_price: Numeric | null;
   assignee_user_id: string | null;
   closing_note: string | null;
   contact_number: string;
   created_at: Generated<Timestamp>;
+  decision: string | null;
+  decision_note: string | null;
   email: string | null;
+  expected_resale_price: Numeric | null;
   facebook_name: string | null;
   id: Generated<string>;
   inquiry_source: string | null;
+  inspection_completed_at: Timestamp | null;
+  inspection_findings: Json | null;
+  inspection_notes: string | null;
   latest_activity_at: Timestamp | null;
   notes: string | null;
   region: string | null;
   seller_name: string;
   status: string;
+  target_buy_price: Numeric | null;
+  target_profit_amount: Numeric | null;
   updated_at: Generated<Timestamp>;
   vehicle_brand: string;
   vehicle_model: string;
@@ -569,6 +589,18 @@ export interface InventoryVehicleTrackedCosts {
   note: string;
   updated_at: Generated<Timestamp>;
   vehicle_id: string;
+}
+
+export interface OpsActivityHistory {
+  action_type: string;
+  actor_display_name: string | null;
+  actor_user_id: string | null;
+  created_at: Generated<Timestamp>;
+  entity_id: string;
+  entity_type: string;
+  id: Generated<string>;
+  metadata: Json | null;
+  summary: string;
 }
 
 export interface RealtimeMessages {
@@ -778,12 +810,14 @@ export interface DB {
   "crm.follow_ups": CrmFollowUps;
   "crm.lead_activities": CrmLeadActivities;
   "crm.lead_vehicle_links": CrmLeadVehicleLinks;
+  "crm.seller_lead_estimated_costs": CrmSellerLeadEstimatedCosts;
   "crm.seller_leads": CrmSellerLeads;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
   "inventory.vehicle_photos": InventoryVehiclePhotos;
   "inventory.vehicle_tracked_costs": InventoryVehicleTrackedCosts;
   "inventory.vehicles": InventoryVehicles;
+  "ops.activity_history": OpsActivityHistory;
   "realtime.messages": RealtimeMessages;
   "realtime.schema_migrations": RealtimeSchemaMigrations;
   "realtime.subscription": RealtimeSubscription;

@@ -93,8 +93,11 @@ export class AuthController {
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('admin')
   @Post('users')
-  createUser(@Body() createUserDto: CreateUserDto) {
-    return this.authService.createUser(createUserDto);
+  createUser(
+    @CurrentUser() user: CurrentUserType,
+    @Body() createUserDto: CreateUserDto,
+  ) {
+    return this.authService.createUser(createUserDto, user);
   }
 
   @UseGuards(AccessTokenGuard, RolesGuard)

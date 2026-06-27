@@ -32,6 +32,7 @@ import {
 import { CreateUserDto } from './dto/create-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { ActivityHistoryService } from '../activity-history/activity-history.service';
 
 const DEFAULT_STAFF_PASSWORD = '123456';
 const MIN_PASSWORD_LENGTH = 6;
@@ -41,6 +42,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     @Inject(DATABASE) private readonly db: Kysely<DB>,
+    private readonly activityHistoryService: ActivityHistoryService,
   ) {}
 
   async login(
@@ -159,8 +161,8 @@ export class AuthService {
       full_name: session.userFullName,
       role: parseRole(session.userRole),
       password_hash: session.userPasswordHash,
-      active: session.userActive,
       must_change_password: session.userMustChangePassword,
+      active: session.userActive,
       created_at: session.userCreatedAt,
       updated_at: session.userUpdatedAt,
     };
@@ -197,6 +199,7 @@ export class AuthService {
 
   async createUser(
     createUserDto: CreateUserDto,
+    currentUser: CurrentUser,
   ): Promise<{ user: CurrentUser }> {
     const email = createUserDto.email?.trim().toLowerCase();
     const role = this.parseCreateUserRole(createUserDto.role);
@@ -236,6 +239,20 @@ export class AuthService {
       })
       .returningAll()
       .executeTakeFirstOrThrow();
+
+    await this.activityHistoryService.write({
+      actor: currentUser,
+      entityType: 'user',
+      entityId: insertedUser.id,
+      actionType: 'user.created',
+      summary: 'Staff account created',
+      metadata: {
+        email: insertedUser.email,
+        fullName: insertedUser.full_name,
+        role: insertedUser.role,
+        mustChangePassword: insertedUser.must_change_password,
+      },
+    });
 
     return { user: this.toCurrentUser(this.normalizeUser(insertedUser)) };
   }
@@ -330,6 +347,19 @@ export class AuthService {
         .execute();
     }
 
+    await this.activityHistoryService.write({
+      actor: currentUser,
+      entityType: 'user',
+      entityId: updatedUser.id,
+      actionType: 'user.status_changed',
+      summary: updateUserStatusDto.active ? 'Staff account enabled' : 'Staff account disabled',
+      metadata: {
+        email: updatedUser.email,
+        fullName: updatedUser.full_name,
+        from: existingUser.active,
+        to: updatedUser.active,
+      },
+    });
     return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
   }
 
@@ -376,6 +406,17 @@ export class AuthService {
       .returningAll()
       .executeTakeFirstOrThrow();
 
+    await this.activityHistoryService.write({
+      actor: currentUser,
+      entityType: 'user',
+      entityId: updatedUser.id,
+      actionType: 'user.password_changed',
+      summary: 'Password changed',
+      metadata: {
+        mustChangePasswordCleared:
+          user.must_change_password && !updatedUser.must_change_password,
+      },
+    });
     return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
   }
 

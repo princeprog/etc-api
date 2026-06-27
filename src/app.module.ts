@@ -11,6 +11,7 @@ import { SalesModule } from './modules/sales/sales.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { ActivityHistoryModule } from './modules/activity-history/activity-history.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     DashboardModule,
     ReportsModule,
     UploadsModule,
+    ActivityHistoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

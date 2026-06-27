@@ -11,8 +11,10 @@ import {
   normalizeSearch,
   parsePagination,
 } from '../../common/utils/list-query.utils';
+import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
+import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { ListFollowUpsQueryDto } from './dto/list-follow-ups-query.dto';
@@ -29,9 +31,12 @@ import {
 
 @Injectable()
 export class FollowUpsService {
-  constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Kysely<DB>,
+    private readonly activityHistoryService: ActivityHistoryService,
+  ) {}
 
-  async create(dto: CreateFollowUpDto) {
+  async create(user: CurrentUser, dto: CreateFollowUpDto) {
     const leadType = parseLeadType(dto.leadType);
     const note = dto.note?.trim();
 
@@ -82,6 +87,24 @@ export class FollowUpsService {
       })
       .returning(['id'])
       .executeTakeFirstOrThrow();
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'follow_up',
+      entityId: inserted.id,
+      actionType: 'follow_up.created',
+      summary: 'Follow-up scheduled',
+      metadata: {
+        leadType,
+        sellerLeadId: dto.sellerLeadId ?? null,
+        buyerLeadId: dto.buyerLeadId ?? null,
+        assigneeUserId: dto.assigneeUserId,
+        dueAt: dto.dueAt,
+      },
+    });
+
+    const followUp = await this.getRecordOrThrow(inserted.id);
+    await this.writeLeadFollowUpActivity(user, followUp, 'scheduled');
 
     return { followUp: await this.getFollowUpOrThrow(inserted.id) };
   }
@@ -319,8 +342,7 @@ export class FollowUpsService {
 
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
-
-  async complete(id: string, dto: CompleteFollowUpDto) {
+  async complete(user: CurrentUser, id: string, dto: CompleteFollowUpDto) {
     const followUp = await this.getRecordOrThrow(id);
     const outcomeNote = dto.outcomeNote?.trim();
 
@@ -343,6 +365,22 @@ export class FollowUpsService {
       .where('id', '=', id)
       .execute();
 
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'follow_up',
+      entityId: id,
+      actionType: 'follow_up.completed',
+      summary: 'Follow-up completed',
+      metadata: {
+        leadType: followUp.lead_type,
+        sellerLeadId: followUp.seller_lead_id,
+        buyerLeadId: followUp.buyer_lead_id,
+        dueAt: followUp.due_at.toISOString(),
+      },
+    });
+
+    await this.writeLeadFollowUpActivity(user, followUp, 'completed');
+
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
 
@@ -354,6 +392,31 @@ export class FollowUpsService {
       .executeTakeFirstOrThrow();
 
     return Number(result.count);
+  }
+  private async writeLeadFollowUpActivity(
+    user: CurrentUser,
+    followUp: Awaited<ReturnType<FollowUpsService['getRecordOrThrow']>>,
+    action: 'scheduled' | 'completed',
+  ) {
+    const entityType = followUp.lead_type === 'buyer' ? 'buyer_lead' : 'seller_lead';
+    const entityId = followUp.lead_type === 'buyer' ? followUp.buyer_lead_id : followUp.seller_lead_id;
+
+    if (!entityId) {
+      return;
+    }
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType,
+      entityId,
+      actionType: `${entityType}.follow_up_${action}`,
+      summary: action === 'scheduled' ? 'Follow-up scheduled for lead' : 'Lead follow-up completed',
+      metadata: {
+        followUpId: followUp.id,
+        dueAt: followUp.due_at.toISOString(),
+        assigneeUserId: followUp.assignee_user_id,
+      },
+    });
   }
 
   private async getFollowUpOrThrow(id: string) {

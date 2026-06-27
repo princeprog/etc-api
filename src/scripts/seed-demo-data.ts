@@ -1,10 +1,9 @@
 import 'dotenv/config';
 
-import { Kysely, PostgresDialect } from 'kysely';
+import { type Insertable, Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
 
 import type { DB } from '../database/db.js';
-import type { NewBuyerLead, NewSellerLead } from '../database/schema.js';
 
 const SELLER_LEAD_COUNT = 20;
 const BUYER_LEAD_COUNT = 20;
@@ -79,7 +78,7 @@ async function resetDemoData(db: Kysely<DB>) {
 function buildSellerLeads(
   assigneeUserId: string | null,
   now: Date,
-): NewSellerLead[] {
+): Array<Insertable<DB['crm.seller_leads']>> {
   const samples = [
     ['Ramon Bautista', 'Toyota', 'Vios', 2020, '1.3 CVT', '485000.00', 'Cebu', 'Facebook'],
     ['Jessa Flores', 'Honda', 'City', 2021, 'RS CVT', '638000.00', 'Mandaue', 'Walk-in'],
@@ -136,7 +135,7 @@ function buildSellerLeads(
 function buildBuyerLeads(
   assigneeUserId: string | null,
   now: Date,
-): NewBuyerLead[] {
+): Array<Insertable<DB['crm.buyer_leads']>> {
   const samples = [
     ['Alex Tan', '620000.00', 'Toyota Vios or Honda City', 'Facebook'],
     ['Bianca Cruz', '850000.00', 'MPV for family use', 'Walk-in'],

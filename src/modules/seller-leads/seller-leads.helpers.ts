@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { Json, JsonObject } from '../../database/db';
 
 import type {
   InspectionItemRating,
@@ -73,35 +74,66 @@ export function parseSellerLeadDecision(
 }
 
 export function parseInspectionFindings(
-  value: SellerLeadInspectionFindings | null | undefined,
+  value: Json | SellerLeadInspectionFindings | null | undefined,
 ): SellerLeadInspectionFindings | null {
-  if (!value) {
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
     return null;
   }
 
-  const normalizedEntries = Object.entries(value).map(([key, finding]) => {
-    if (!finding) {
-      return [key, undefined] as const;
-    }
+  const normalizedEntries = Object.entries(value as Record<string, unknown>).map(
+    ([key, rawFinding]) => {
+      if (!rawFinding || typeof rawFinding !== 'object' || Array.isArray(rawFinding)) {
+        return [key, undefined] as const;
+      }
 
-    if (!INSPECTION_ITEM_RATINGS.includes(finding.rating)) {
-      throw new BadRequestException(
-        `Unsupported inspection rating for ${key}: ${finding.rating}`,
-      );
-    }
+      const finding = rawFinding as { rating?: unknown; notes?: unknown };
 
-    return [
-      key,
-      {
-        rating: finding.rating,
-        notes: finding.notes?.trim() ? finding.notes.trim() : null,
-      },
-    ] as const;
-  });
+      if (typeof finding.rating !== 'string') {
+        return [key, undefined] as const;
+      }
+
+      if (!INSPECTION_ITEM_RATINGS.includes(finding.rating as InspectionItemRating)) {
+        throw new BadRequestException(
+          `Unsupported inspection rating for ${key}: ${String(finding.rating)}`,
+        );
+      }
+
+      return [
+        key,
+        {
+          rating: finding.rating as InspectionItemRating,
+          notes:
+            typeof finding.notes === 'string' && finding.notes.trim()
+              ? finding.notes.trim()
+              : null,
+        },
+      ] as const;
+    },
+  );
 
   return Object.fromEntries(
     normalizedEntries.filter(([, finding]) => finding !== undefined),
   ) as SellerLeadInspectionFindings;
+}
+
+export function serializeInspectionFindings(
+  value: SellerLeadInspectionFindings | null | undefined,
+): JsonObject | null {
+  const normalized = parseInspectionFindings(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    Object.entries(normalized).map(([key, finding]) => [
+      key,
+      {
+        rating: finding.rating,
+        notes: finding.notes,
+      },
+    ]),
+  ) as JsonObject;
 }
 
 export function parseSellerLeadEstimatedCostCategory(
@@ -243,7 +275,7 @@ export function calculateSellerLeadEvaluationSummary(input: {
 
 export function mapSellerLeadEstimatedCostResponse(cost: {
   id: string;
-  category: VehicleTrackedCostCategory;
+  category: string;
   amount: string;
   note: string;
   created_at: Date;
@@ -251,7 +283,7 @@ export function mapSellerLeadEstimatedCostResponse(cost: {
 }) {
   return {
     id: cost.id,
-    category: cost.category,
+    category: parseSellerLeadEstimatedCostCategory(cost.category),
     amount: cost.amount,
     note: cost.note,
     createdAt: cost.created_at,
@@ -275,7 +307,7 @@ export function mapSellerLeadResponse(lead: {
   notes: string | null;
   inspection_completed_at: Date | null;
   inspection_notes: string | null;
-  inspection_findings: SellerLeadInspectionFindings | null;
+  inspection_findings: Json | SellerLeadInspectionFindings | null;
   target_buy_price: string | null;
   expected_resale_price: string | null;
   target_profit_amount: string | null;
@@ -312,7 +344,7 @@ export function mapSellerLeadResponse(lead: {
     notes: lead.notes,
     inspectionCompletedAt: lead.inspection_completed_at,
     inspectionNotes: lead.inspection_notes,
-    inspectionFindings: lead.inspection_findings,
+    inspectionFindings: parseInspectionFindings(lead.inspection_findings),
     targetBuyPrice: lead.target_buy_price,
     expectedResalePrice: lead.expected_resale_price,
     targetProfitAmount: lead.target_profit_amount,

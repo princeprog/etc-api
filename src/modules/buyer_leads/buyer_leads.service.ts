@@ -12,8 +12,10 @@ import {
   normalizeSearch,
   parsePagination,
 } from '../../common/utils/list-query.utils';
+import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
+import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import {
   mapBuyerLeadResponse,
   parseBuyerLeadStatus,
@@ -25,9 +27,12 @@ import { UpdateBuyerLeadDto } from './dto/update-buyer_lead.dto';
 
 @Injectable()
 export class BuyerLeadsService {
-  constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Kysely<DB>,
+    private readonly activityHistoryService: ActivityHistoryService,
+  ) {}
 
-  async create(createBuyerLeadDto: CreateBuyerLeadDto) {
+  async create(user: CurrentUser, createBuyerLeadDto: CreateBuyerLeadDto) {
     const insertedLead = await this.db
       .insertInto('crm.buyer_leads')
       .values({
@@ -50,6 +55,19 @@ export class BuyerLeadsService {
       })
       .returning(['id'])
       .executeTakeFirstOrThrow();
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'buyer_lead',
+      entityId: insertedLead.id,
+      actionType: 'buyer_lead.created',
+      summary: 'Buyer lead created',
+      metadata: {
+        buyerName: createBuyerLeadDto.buyerName,
+        status: parseBuyerLeadStatus(createBuyerLeadDto.status, 'New Inquiry'),
+        assigneeUserId: createBuyerLeadDto.assigneeUserId ?? null,
+      },
+    });
 
     return { buyerLead: await this.getBuyerLeadOrThrow(insertedLead.id) };
   }
@@ -114,7 +132,7 @@ export class BuyerLeadsService {
     return { buyerLead: await this.getBuyerLeadOrThrow(id) };
   }
 
-  async update(id: string, updateBuyerLeadDto: UpdateBuyerLeadDto) {
+  async update(user: CurrentUser, id: string, updateBuyerLeadDto: UpdateBuyerLeadDto) {
     const existingLead = await this.getLeadRecordOrThrow(id);
     const nextStatus = updateBuyerLeadDto.status
       ? parseBuyerLeadStatus(updateBuyerLeadDto.status, 'New Inquiry')
@@ -210,15 +228,32 @@ export class BuyerLeadsService {
       .where('id', '=', id)
       .execute();
 
+    await this.writeUpdateActivity(user, existingLead, {
+      status: nextStatus,
+      assignee_user_id: nextAssigneeUserId,
+      buyer_name: nextBuyerName,
+      contact_number: nextContactNumber,
+      desired_budget:
+        updateBuyerLeadDto.desiredBudget !== undefined
+          ? updateBuyerLeadDto.desiredBudget ?? null
+          : existingLead.desired_budget,
+      inquiry_source:
+        updateBuyerLeadDto.inquirySource !== undefined
+          ? updateBuyerLeadDto.inquirySource ?? null
+          : existingLead.inquiry_source,
+      notes: updateBuyerLeadDto.notes !== undefined ? updateBuyerLeadDto.notes ?? null : existingLead.notes,
+      closing_note: nextClosingNote,
+    });
+
     return { buyerLead: await this.getBuyerLeadOrThrow(id) };
   }
 
-  async linkVehicle(id: string, dto: LinkBuyerLeadVehicleDto) {
+  async linkVehicle(user: CurrentUser, id: string, dto: LinkBuyerLeadVehicleDto) {
     await this.getLeadRecordOrThrow(id);
 
     const vehicle = await this.db
       .selectFrom('inventory.vehicles')
-      .select(['id'])
+      .select(['id', 'stock_number', 'brand', 'model'])
       .where('id', '=', dto.vehicleId)
       .executeTakeFirst();
 
@@ -247,11 +282,41 @@ export class BuyerLeadsService {
       })
       .execute();
 
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'buyer_lead',
+      entityId: id,
+      actionType: 'buyer_lead.vehicle_linked',
+      summary: `Linked vehicle ${vehicle.stock_number} to buyer lead`,
+      metadata: {
+        vehicleId: vehicle.id,
+        vehicleStockNumber: vehicle.stock_number,
+        vehicleLabel: `${vehicle.brand} ${vehicle.model}`,
+      },
+    });
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'vehicle',
+      entityId: vehicle.id,
+      actionType: 'vehicle.linked_to_buyer_lead',
+      summary: 'Vehicle linked to buyer lead',
+      metadata: {
+        buyerLeadId: id,
+      },
+    });
+
     return { buyerLead: await this.getBuyerLeadOrThrow(id) };
   }
 
-  async unlinkVehicle(id: string, vehicleId: string) {
+  async unlinkVehicle(user: CurrentUser, id: string, vehicleId: string) {
     await this.getLeadRecordOrThrow(id);
+
+    const vehicle = await this.db
+      .selectFrom('inventory.vehicles')
+      .select(['id', 'stock_number', 'brand', 'model'])
+      .where('id', '=', vehicleId)
+      .executeTakeFirst();
 
     const deleted = await this.db
       .deleteFrom('crm.lead_vehicle_links')
@@ -265,7 +330,117 @@ export class BuyerLeadsService {
       );
     }
 
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'buyer_lead',
+      entityId: id,
+      actionType: 'buyer_lead.vehicle_unlinked',
+      summary: vehicle?.stock_number
+        ? `Unlinked vehicle ${vehicle.stock_number} from buyer lead`
+        : 'Vehicle unlinked from buyer lead',
+      metadata: {
+        vehicleId,
+        vehicleStockNumber: vehicle?.stock_number ?? null,
+      },
+    });
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'vehicle',
+      entityId: vehicleId,
+      actionType: 'vehicle.unlinked_from_buyer_lead',
+      summary: 'Vehicle unlinked from buyer lead',
+      metadata: {
+        buyerLeadId: id,
+      },
+    });
+
     return { buyerLead: await this.getBuyerLeadOrThrow(id) };
+  }
+
+  private async writeUpdateActivity(
+    user: CurrentUser,
+    previous: Awaited<ReturnType<BuyerLeadsService['getLeadRecordOrThrow']>>,
+    next: {
+      status: string;
+      assignee_user_id: string | null;
+      buyer_name: string;
+      contact_number: string;
+      desired_budget: string | null;
+      inquiry_source: string | null;
+      notes: string | null;
+      closing_note: string | null;
+    },
+  ) {
+    const events: Promise<void>[] = [];
+
+    if (previous.status !== next.status) {
+      events.push(
+        this.activityHistoryService.write({
+          actor: user,
+          entityType: 'buyer_lead',
+          entityId: previous.id,
+          actionType: 'buyer_lead.status_changed',
+          summary: `Buyer lead moved from ${previous.status} to ${next.status}`,
+          metadata: { from: previous.status, to: next.status },
+        }),
+      );
+    }
+
+    if (previous.assignee_user_id !== next.assignee_user_id) {
+      events.push(
+        this.activityHistoryService.write({
+          actor: user,
+          entityType: 'buyer_lead',
+          entityId: previous.id,
+          actionType: 'buyer_lead.assignment_changed',
+          summary: next.assignee_user_id ? 'Buyer lead assignment changed' : 'Buyer lead unassigned',
+          metadata: { from: previous.assignee_user_id, to: next.assignee_user_id },
+        }),
+      );
+    }
+
+    if (previous.closing_note !== next.closing_note) {
+      events.push(
+        this.activityHistoryService.write({
+          actor: user,
+          entityType: 'buyer_lead',
+          entityId: previous.id,
+          actionType: 'buyer_lead.closing_note_updated',
+          summary: previous.closing_note ? 'Buyer closing note updated' : 'Buyer closing note added',
+          metadata: { hadClosingNote: Boolean(previous.closing_note), hasClosingNote: Boolean(next.closing_note) },
+        }),
+      );
+    }
+
+    if (
+      previous.buyer_name !== next.buyer_name ||
+      previous.contact_number !== next.contact_number ||
+      previous.desired_budget !== next.desired_budget ||
+      previous.inquiry_source !== next.inquiry_source ||
+      previous.notes !== next.notes
+    ) {
+      events.push(
+        this.activityHistoryService.write({
+          actor: user,
+          entityType: 'buyer_lead',
+          entityId: previous.id,
+          actionType: 'buyer_lead.details_updated',
+          summary: 'Buyer lead details updated',
+          metadata: {
+            changedFields: [
+              previous.buyer_name !== next.buyer_name ? 'buyerName' : null,
+              previous.contact_number !== next.contact_number ? 'contactNumber' : null,
+              previous.desired_budget !== next.desired_budget ? 'desiredBudget' : null,
+              previous.inquiry_source !== next.inquiry_source ? 'inquirySource' : null,
+              previous.notes !== next.notes ? 'notes' : null,
+            ].filter(Boolean),
+          },
+        }),
+      );
+    }
+
+    await Promise.all(events);
   }
 
   private async getBuyerLeadOrThrow(id: string) {
