@@ -375,7 +375,7 @@ export class FollowUpsService {
         leadType: followUp.lead_type,
         sellerLeadId: followUp.seller_lead_id,
         buyerLeadId: followUp.buyer_lead_id,
-        dueAt: followUp.due_at,
+        dueAt: followUp.due_at.toISOString(),
       },
     });
 
@@ -413,7 +413,7 @@ export class FollowUpsService {
       summary: action === 'scheduled' ? 'Follow-up scheduled for lead' : 'Lead follow-up completed',
       metadata: {
         followUpId: followUp.id,
-        dueAt: followUp.due_at,
+        dueAt: followUp.due_at.toISOString(),
         assigneeUserId: followUp.assignee_user_id,
       },
     });

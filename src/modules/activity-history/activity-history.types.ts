@@ -1,9 +1,8 @@
 import type { CurrentUser } from '../../common/types/auth.types';
+import type { JsonObject } from '../../database/db';
 import type { ActivityEntityType } from '../../database/schema';
 
-export interface ActivityHistoryMetadata {
-  [key: string]: unknown;
-}
+export type ActivityHistoryMetadata = JsonObject;
 
 export interface WriteActivityHistoryInput {
   actor?: CurrentUser | null;

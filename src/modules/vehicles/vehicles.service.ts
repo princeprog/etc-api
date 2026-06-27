@@ -13,6 +13,7 @@ import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { VehicleStatus } from '../../database/schema';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import type { ActivityHistoryMetadata } from '../activity-history/activity-history.types';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
@@ -598,5 +599,5 @@ export class VehiclesService {
 interface WriteActivityEvent {
   actionType: string;
   summary: string;
-  metadata: Record<string, unknown>;
+  metadata: ActivityHistoryMetadata;
 }

@@ -33,11 +33,11 @@ import {
   normalizeOptionalMoney,
   normalizeSellerLeadEstimatedCostAmount,
   normalizeSellerLeadEstimatedCostNote,
-  parseInspectionFindings,
   parseOptionalIsoDate,
   parseSellerLeadDecision,
   parseSellerLeadEstimatedCostCategory,
   parseSellerLeadStatus,
+  serializeInspectionFindings,
 } from './seller-leads.helpers';
 
 @Injectable()
@@ -80,7 +80,7 @@ export class SellerLeadsService {
           createSellerLeadDto.inspectionCompletedAt,
         ),
         inspection_notes: createSellerLeadDto.inspectionNotes ?? null,
-        inspection_findings: parseInspectionFindings(
+        inspection_findings: serializeInspectionFindings(
           createSellerLeadDto.inspectionFindings,
         ),
         target_buy_price: normalizeOptionalMoney(createSellerLeadDto.targetBuyPrice),
@@ -117,10 +117,9 @@ export class SellerLeadsService {
     });
 
     return {
-      sellerLead: await this.buildSellerLeadResponse({
-        ...sellerLead,
-        status: parseSellerLeadStatus(sellerLead.status, 'New Inquiry'),
-      }),
+      sellerLead: await this.buildSellerLeadResponse(
+        this.normalizeSellerLeadRecord(sellerLead),
+      ),
     };
   }
 
@@ -171,10 +170,7 @@ export class SellerLeadsService {
     const response = buildPaginatedResponse(
       await Promise.all(
         sellerLeads.map((lead) =>
-          this.buildSellerLeadResponse({
-            ...lead,
-            status: parseSellerLeadStatus(lead.status, 'New Inquiry'),
-          }),
+          this.buildSellerLeadResponse(this.normalizeSellerLeadRecord(lead)),
         ),
       ),
       pagination,
@@ -286,7 +282,7 @@ export class SellerLeadsService {
           : {}),
         ...(updateSellerLeadDto.inspectionFindings !== undefined
           ? {
-              inspection_findings: parseInspectionFindings(
+              inspection_findings: serializeInspectionFindings(
                 updateSellerLeadDto.inspectionFindings,
               ),
             }
@@ -678,6 +674,19 @@ export class SellerLeadsService {
       throw new NotFoundException(`Seller lead ${id} was not found`);
     }
 
+    return {
+      ...sellerLead,
+      status: parseSellerLeadStatus(sellerLead.status, 'New Inquiry'),
+      decision: parseSellerLeadDecision(sellerLead.decision),
+    };
+  }
+
+  private normalizeSellerLeadRecord<
+    T extends {
+      status: string;
+      decision: string | null;
+    },
+  >(sellerLead: T) {
     return {
       ...sellerLead,
       status: parseSellerLeadStatus(sellerLead.status, 'New Inquiry'),
