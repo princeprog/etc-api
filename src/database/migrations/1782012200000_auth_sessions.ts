@@ -3,14 +3,14 @@ import { sql, type Kysely } from 'kysely';
 // `any` is required here since migrations should be frozen in time. alternatively, keep a "snapshot" db interface.
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
-    .createTable('auth.sessions')
+    .createTable('authentication.sessions')
     .addColumn('id', 'uuid', (col) =>
       col.primaryKey().defaultTo(sql`gen_random_uuid()`),
     )
     .addColumn('user_id', 'uuid', (col) =>
       col
         .notNull()
-        .references('auth.users.id')
+        .references('authentication.users.id')
         .onDelete('cascade')
         .onUpdate('cascade'),
     )
@@ -31,12 +31,12 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   await db.schema
     .createIndex('auth_sessions_user_id_idx')
-    .on('auth.sessions')
+    .on('authentication.sessions')
     .column('user_id')
     .execute();
   await db.schema
     .createIndex('auth_sessions_expires_at_idx')
-    .on('auth.sessions')
+    .on('authentication.sessions')
     .column('expires_at')
     .execute();
 }
@@ -48,5 +48,5 @@ export async function down(db: Kysely<any>): Promise<void> {
     .ifExists()
     .execute();
   await db.schema.dropIndex('auth_sessions_user_id_idx').ifExists().execute();
-  await db.schema.dropTable('auth.sessions').ifExists().execute();
+  await db.schema.dropTable('authentication.sessions').ifExists().execute();
 }
