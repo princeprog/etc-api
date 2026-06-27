@@ -9,6 +9,7 @@ import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     FollowUpsModule,
     SalesModule,
     DashboardModule,
+    ReportsModule,
     UploadsModule,
   ],
   controllers: [AppController],
