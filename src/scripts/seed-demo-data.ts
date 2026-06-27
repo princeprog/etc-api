@@ -4,6 +4,7 @@ import { Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
 
 import type { DB } from '../database/db.js';
+import type { NewBuyerLead, NewSellerLead } from '../database/schema.js';
 
 const SELLER_LEAD_COUNT = 20;
 const BUYER_LEAD_COUNT = 20;
@@ -32,7 +33,7 @@ async function seedDemoData() {
     }
 
     const assigneeUser = await db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .select(['id'])
       .orderBy('created_at', 'asc')
       .executeTakeFirst();
@@ -75,7 +76,10 @@ async function resetDemoData(db: Kysely<DB>) {
   });
 }
 
-function buildSellerLeads(assigneeUserId: string | null, now: Date) {
+function buildSellerLeads(
+  assigneeUserId: string | null,
+  now: Date,
+): NewSellerLead[] {
   const samples = [
     ['Ramon Bautista', 'Toyota', 'Vios', 2020, '1.3 CVT', '485000.00', 'Cebu', 'Facebook'],
     ['Jessa Flores', 'Honda', 'City', 2021, 'RS CVT', '638000.00', 'Mandaue', 'Walk-in'],
@@ -129,7 +133,10 @@ function buildSellerLeads(assigneeUserId: string | null, now: Date) {
   );
 }
 
-function buildBuyerLeads(assigneeUserId: string | null, now: Date) {
+function buildBuyerLeads(
+  assigneeUserId: string | null,
+  now: Date,
+): NewBuyerLead[] {
   const samples = [
     ['Alex Tan', '620000.00', 'Toyota Vios or Honda City', 'Facebook'],
     ['Bianca Cruz', '850000.00', 'MPV for family use', 'Walk-in'],

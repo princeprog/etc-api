@@ -407,7 +407,7 @@ export class FollowUpsService {
 
   private async ensureAssigneeExists(id: string) {
     const user = await this.db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .select(['id'])
       .where('id', '=', id)
       .executeTakeFirst();

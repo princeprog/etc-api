@@ -51,21 +51,25 @@ export class AccessTokenGuard implements CanActivate {
     }
 
     const session = await this.db
-      .selectFrom('auth.sessions')
-      .innerJoin('auth.users', 'auth.users.id', 'auth.sessions.user_id')
+      .selectFrom('authentication.sessions')
+      .innerJoin(
+        'authentication.users',
+        'authentication.users.id',
+        'authentication.sessions.user_id',
+      )
       .select([
-        'auth.sessions.id as sessionId',
-        'auth.sessions.current_access_token_jti as currentAccessTokenJti',
-        'auth.sessions.expires_at as sessionExpiresAt',
-        'auth.sessions.revoked_at as sessionRevokedAt',
-        'auth.users.id as userId',
-        'auth.users.email as userEmail',
-        'auth.users.full_name as userFullName',
-        'auth.users.role as userRole',
-        'auth.users.must_change_password as userMustChangePassword',
-        'auth.users.active as userActive',
+        'authentication.sessions.id as sessionId',
+        'authentication.sessions.current_access_token_jti as currentAccessTokenJti',
+        'authentication.sessions.expires_at as sessionExpiresAt',
+        'authentication.sessions.revoked_at as sessionRevokedAt',
+        'authentication.users.id as userId',
+        'authentication.users.email as userEmail',
+        'authentication.users.full_name as userFullName',
+        'authentication.users.role as userRole',
+        'authentication.users.must_change_password as userMustChangePassword',
+        'authentication.users.active as userActive',
       ])
-      .where('auth.sessions.id', '=', payload.sessionId)
+      .where('authentication.sessions.id', '=', payload.sessionId)
       .executeTakeFirst();
 
     if (!session || !session.userActive) {

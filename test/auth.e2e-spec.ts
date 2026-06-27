@@ -34,9 +34,9 @@ describe('Auth flows (e2e)', () => {
   });
 
   beforeEach(async () => {
-    await db.deleteFrom('auth.sessions').execute();
+    await db.deleteFrom('authentication.sessions').execute();
     await db
-      .deleteFrom('auth.users')
+      .deleteFrom('authentication.users')
       .where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL])
       .execute();
 
@@ -46,7 +46,7 @@ describe('Auth flows (e2e)', () => {
     ]);
 
     await db
-      .insertInto('auth.users')
+      .insertInto('authentication.users')
       .values([
         {
           email: ADMIN_EMAIL,
@@ -65,9 +65,9 @@ describe('Auth flows (e2e)', () => {
   });
 
   afterAll(async () => {
-    await db.deleteFrom('auth.sessions').execute();
+    await db.deleteFrom('authentication.sessions').execute();
     await db
-      .deleteFrom('auth.users')
+      .deleteFrom('authentication.users')
       .where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL, NEW_STAFF_EMAIL])
       .execute();
     await app.close();

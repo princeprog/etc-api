@@ -11,7 +11,9 @@ export type SellerLeadStatus =
   | 'New Inquiry'
   | 'Contacted'
   | 'Inspection Scheduled'
+  | 'Evaluated'
   | 'Negotiating'
+  | 'Approved to Buy'
   | 'Purchased'
   | 'Rejected';
 export type BuyerLeadStatus =
@@ -31,6 +33,26 @@ export type VehicleTrackedCostCategory =
   | 'transport'
   | 'documentation'
   | 'miscellaneous';
+export type SellerLeadDecision = 'Buy' | 'Negotiate' | 'Walk Away';
+export type InspectionItemRating = 'excellent' | 'good' | 'fair' | 'poor';
+
+export interface SellerLeadInspectionItem {
+  rating: InspectionItemRating;
+  notes: string | null;
+}
+
+export interface SellerLeadInspectionFindings {
+  engine?: SellerLeadInspectionItem;
+  transmission?: SellerLeadInspectionItem;
+  suspension?: SellerLeadInspectionItem;
+  brakes?: SellerLeadInspectionItem;
+  tires?: SellerLeadInspectionItem;
+  exterior?: SellerLeadInspectionItem;
+  interior?: SellerLeadInspectionItem;
+  ac?: SellerLeadInspectionItem;
+  electrical?: SellerLeadInspectionItem;
+  papers?: SellerLeadInspectionItem;
+}
 
 export interface UsersTable {
   id: Generated<string>;
@@ -40,7 +62,6 @@ export interface UsersTable {
   role: RoleName;
   must_change_password: Generated<boolean>;
   active: Generated<boolean>;
-  must_change_password: Generated<boolean>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -113,10 +134,30 @@ export interface SellerLeadsTable {
   asking_price: string | null;
   region: string | null;
   notes: string | null;
+  inspection_completed_at: Date | null;
+  inspection_notes: string | null;
+  inspection_findings: SellerLeadInspectionFindings | null;
+  target_buy_price: string | null;
+  expected_resale_price: string | null;
+  target_profit_amount: string | null;
+  decision: SellerLeadDecision | null;
+  decision_note: string | null;
+  approved_to_buy_at: Date | null;
+  approved_by_user_id: string | null;
   status: SellerLeadStatus;
   assignee_user_id: string | null;
   latest_activity_at: Date | null;
   closing_note: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface SellerLeadEstimatedCostsTable {
+  id: Generated<string>;
+  seller_lead_id: string;
+  category: VehicleTrackedCostCategory;
+  amount: string;
+  note: string;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -200,12 +241,13 @@ export interface CommissionsTable {
 }
 
 export interface DB {
-  'auth.users': UsersTable;
-  'auth.sessions': SessionsTable;
+  'authentication.users': UsersTable;
+  'authentication.sessions': SessionsTable;
   'inventory.vehicles': VehiclesTable;
   'inventory.vehicle_photos': VehiclePhotosTable;
   'inventory.vehicle_tracked_costs': VehicleTrackedCostsTable;
   'crm.seller_leads': SellerLeadsTable;
+  'crm.seller_lead_estimated_costs': SellerLeadEstimatedCostsTable;
   'crm.buyer_leads': BuyerLeadsTable;
   'crm.lead_vehicle_links': LeadVehicleLinksTable;
   'crm.lead_activities': LeadActivitiesTable;
@@ -232,6 +274,12 @@ export type VehicleTrackedCostUpdate = Updateable<VehicleTrackedCostsTable>;
 export type SellerLead = Selectable<SellerLeadsTable>;
 export type NewSellerLead = Insertable<SellerLeadsTable>;
 export type SellerLeadUpdate = Updateable<SellerLeadsTable>;
+export type SellerLeadEstimatedCost =
+  Selectable<SellerLeadEstimatedCostsTable>;
+export type NewSellerLeadEstimatedCost =
+  Insertable<SellerLeadEstimatedCostsTable>;
+export type SellerLeadEstimatedCostUpdate =
+  Updateable<SellerLeadEstimatedCostsTable>;
 
 export type BuyerLead = Selectable<BuyerLeadsTable>;
 export type NewBuyerLead = Insertable<BuyerLeadsTable>;

@@ -82,6 +82,30 @@ export interface AuthCustomOauthProviders {
   userinfo_url: string | null;
 }
 
+export interface AuthenticationSessions {
+  created_at: Generated<Timestamp>;
+  current_access_token_jti: string;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  last_rotated_at: Generated<Timestamp>;
+  refresh_token_hash: string;
+  revoked_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface AuthenticationUsers {
+  active: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  email: string;
+  full_name: string;
+  id: Generated<string>;
+  must_change_password: Generated<boolean>;
+  password_hash: string;
+  role: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface AuthFlowState {
   auth_code: string | null;
   auth_code_issued_at: Timestamp | null;
@@ -376,6 +400,78 @@ export interface AuthWebauthnCredentials {
   user_id: string;
 }
 
+export interface CrmBuyerLeads {
+  assignee_user_id: string | null;
+  buyer_name: string;
+  closing_note: string | null;
+  contact_number: string;
+  created_at: Generated<Timestamp>;
+  desired_budget: Numeric | null;
+  email: string | null;
+  facebook_name: string | null;
+  id: Generated<string>;
+  inquiry_source: string | null;
+  latest_activity_at: Timestamp | null;
+  notes: string | null;
+  status: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CrmFollowUps {
+  assignee_user_id: string;
+  buyer_lead_id: string | null;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  due_at: Timestamp;
+  id: Generated<string>;
+  lead_type: string;
+  note: string;
+  outcome_note: string | null;
+  seller_lead_id: string | null;
+  status: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface CrmLeadActivities {
+  activity_type: string;
+  buyer_lead_id: string | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  lead_type: string;
+  note: string;
+  performed_by_user_id: string | null;
+  seller_lead_id: string | null;
+}
+
+export interface CrmLeadVehicleLinks {
+  buyer_lead_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  vehicle_id: string;
+}
+
+export interface CrmSellerLeads {
+  asking_price: Numeric | null;
+  assignee_user_id: string | null;
+  closing_note: string | null;
+  contact_number: string;
+  created_at: Generated<Timestamp>;
+  email: string | null;
+  facebook_name: string | null;
+  id: Generated<string>;
+  inquiry_source: string | null;
+  latest_activity_at: Timestamp | null;
+  notes: string | null;
+  region: string | null;
+  seller_name: string;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  vehicle_brand: string;
+  vehicle_model: string;
+  vehicle_variant: string | null;
+  vehicle_year: number | null;
+}
+
 export interface ExtensionsPgStatStatements {
   calls: Int8 | null;
   dbid: number | null;
@@ -433,6 +529,48 @@ export interface ExtensionsPgStatStatementsInfo {
   stats_reset: Timestamp | null;
 }
 
+export interface InventoryVehiclePhotos {
+  created_at: Generated<Timestamp>;
+  file_url: string;
+  id: Generated<string>;
+  sort_order: Generated<number>;
+  vehicle_id: string;
+}
+
+export interface InventoryVehicles {
+  acquisition_source: string | null;
+  brand: string;
+  color: string | null;
+  created_at: Generated<Timestamp>;
+  features: string | null;
+  fuel_type: string | null;
+  id: Generated<string>;
+  mileage: number | null;
+  minimum_acceptable_price: Numeric | null;
+  model: string;
+  purchase_price: Numeric | null;
+  region: string | null;
+  remarks: string | null;
+  seller_lead_id: string | null;
+  status: string;
+  stock_number: string;
+  target_selling_price: Numeric | null;
+  transmission: string | null;
+  updated_at: Generated<Timestamp>;
+  variant: string | null;
+  year: number;
+}
+
+export interface InventoryVehicleTrackedCosts {
+  amount: Numeric;
+  category: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  note: string;
+  updated_at: Generated<Timestamp>;
+  vehicle_id: string;
+}
+
 export interface RealtimeMessages {
   binary_payload: Buffer | null;
   event: string | null;
@@ -460,6 +598,34 @@ export interface RealtimeSubscription {
   id: Generated<Int8>;
   selected_columns: string[] | null;
   subscription_id: string;
+}
+
+export interface SalesCommissions {
+  agent_name: string | null;
+  created_at: Generated<Timestamp>;
+  default_amount: Numeric | null;
+  final_amount: Numeric;
+  id: Generated<string>;
+  override_amount: Numeric | null;
+  override_reason: string | null;
+  sale_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface SalesSales {
+  agent_name: string | null;
+  buyer_lead_id: string;
+  commission_locked: Generated<boolean>;
+  commission_method: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  final_sale_amount: Numeric;
+  gross_profit_amount: Numeric | null;
+  id: Generated<string>;
+  sale_date: Timestamp;
+  sale_number: string;
+  updated_at: Generated<Timestamp>;
+  vehicle_id: string;
 }
 
 export interface StorageBuckets {
@@ -606,11 +772,23 @@ export interface DB {
   "auth.users": AuthUsers;
   "auth.webauthn_challenges": AuthWebauthnChallenges;
   "auth.webauthn_credentials": AuthWebauthnCredentials;
+  "authentication.sessions": AuthenticationSessions;
+  "authentication.users": AuthenticationUsers;
+  "crm.buyer_leads": CrmBuyerLeads;
+  "crm.follow_ups": CrmFollowUps;
+  "crm.lead_activities": CrmLeadActivities;
+  "crm.lead_vehicle_links": CrmLeadVehicleLinks;
+  "crm.seller_leads": CrmSellerLeads;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
+  "inventory.vehicle_photos": InventoryVehiclePhotos;
+  "inventory.vehicle_tracked_costs": InventoryVehicleTrackedCosts;
+  "inventory.vehicles": InventoryVehicles;
   "realtime.messages": RealtimeMessages;
   "realtime.schema_migrations": RealtimeSchemaMigrations;
   "realtime.subscription": RealtimeSubscription;
+  "sales.commissions": SalesCommissions;
+  "sales.sales": SalesSales;
   "storage.buckets": StorageBuckets;
   "storage.buckets_analytics": StorageBucketsAnalytics;
   "storage.buckets_vectors": StorageBucketsVectors;

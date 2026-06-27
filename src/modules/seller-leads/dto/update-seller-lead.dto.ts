@@ -1,4 +1,8 @@
-import type { SellerLeadStatus } from '../../../database/schema';
+import type {
+  SellerLeadDecision,
+  SellerLeadInspectionFindings,
+  SellerLeadStatus,
+} from '../../../database/schema';
 
 export class UpdateSellerLeadDto {
   sellerName?: string;
@@ -13,6 +17,14 @@ export class UpdateSellerLeadDto {
   askingPrice?: string | null;
   region?: string | null;
   notes?: string | null;
+  inspectionCompletedAt?: string | null;
+  inspectionNotes?: string | null;
+  inspectionFindings?: SellerLeadInspectionFindings | null;
+  targetBuyPrice?: string | null;
+  expectedResalePrice?: string | null;
+  targetProfitAmount?: string | null;
+  decision?: SellerLeadDecision | null;
+  decisionNote?: string | null;
   status?: SellerLeadStatus;
   assigneeUserId?: string | null;
   closingNote?: string | null;

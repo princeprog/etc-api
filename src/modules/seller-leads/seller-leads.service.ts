@@ -4,27 +4,38 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Kysely } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
+import type { CurrentUser } from '../../common/types/auth.types';
 import {
   buildPaginatedResponse,
   normalizeSearch,
   parsePagination,
 } from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
-import type { DB } from '../../database/db';
-import { VehiclesService } from '../vehicles/vehicles.service';
+import type { DB } from '../../database/schema';
 import {
   mapVehicleResponse,
   parseVehicleStatus,
 } from '../vehicles/vehicles.helpers';
+import { VehiclesService } from '../vehicles/vehicles.service';
 import { ConvertSellerLeadDto } from './dto/convert-seller-lead.dto';
 import { CreateSellerLeadDto } from './dto/create-seller-lead.dto';
 import { ListSellerLeadsQueryDto } from './dto/list-seller-leads-query.dto';
+import { SellerLeadEstimatedCostDto } from './dto/seller-lead-estimated-cost.dto';
 import { UpdateSellerLeadDto } from './dto/update-seller-lead.dto';
 import {
+  calculateSellerLeadEvaluationSummary,
+  mapSellerLeadEstimatedCostResponse,
   mapSellerLeadResponse,
+  normalizeOptionalMoney,
+  normalizeSellerLeadEstimatedCostAmount,
+  normalizeSellerLeadEstimatedCostNote,
+  parseInspectionFindings,
+  parseOptionalIsoDate,
+  parseSellerLeadDecision,
+  parseSellerLeadEstimatedCostCategory,
   parseSellerLeadStatus,
 } from './seller-leads.helpers';
 
@@ -60,9 +71,25 @@ export class SellerLeadsService {
         ),
         vehicle_year: createSellerLeadDto.vehicleYear ?? null,
         vehicle_variant: createSellerLeadDto.vehicleVariant ?? null,
-        asking_price: createSellerLeadDto.askingPrice ?? null,
+        asking_price: normalizeOptionalMoney(createSellerLeadDto.askingPrice),
         region: createSellerLeadDto.region ?? null,
         notes: createSellerLeadDto.notes ?? null,
+        inspection_completed_at: parseOptionalIsoDate(
+          createSellerLeadDto.inspectionCompletedAt,
+        ),
+        inspection_notes: createSellerLeadDto.inspectionNotes ?? null,
+        inspection_findings: parseInspectionFindings(
+          createSellerLeadDto.inspectionFindings,
+        ),
+        target_buy_price: normalizeOptionalMoney(createSellerLeadDto.targetBuyPrice),
+        expected_resale_price: normalizeOptionalMoney(
+          createSellerLeadDto.expectedResalePrice,
+        ),
+        target_profit_amount: normalizeOptionalMoney(
+          createSellerLeadDto.targetProfitAmount,
+        ),
+        decision: parseSellerLeadDecision(createSellerLeadDto.decision),
+        decision_note: createSellerLeadDto.decisionNote ?? null,
         status: parseSellerLeadStatus(
           createSellerLeadDto.status,
           'New Inquiry',
@@ -74,7 +101,7 @@ export class SellerLeadsService {
       .executeTakeFirstOrThrow();
 
     return {
-      sellerLead: mapSellerLeadResponse({
+      sellerLead: await this.buildSellerLeadResponse({
         ...sellerLead,
         status: parseSellerLeadStatus(sellerLead.status, 'New Inquiry'),
       }),
@@ -126,11 +153,13 @@ export class SellerLeadsService {
       .execute();
 
     const response = buildPaginatedResponse(
-      sellerLeads.map((lead) =>
-        mapSellerLeadResponse({
-          ...lead,
-          status: parseSellerLeadStatus(lead.status, 'New Inquiry'),
-        }),
+      await Promise.all(
+        sellerLeads.map((lead) =>
+          this.buildSellerLeadResponse({
+            ...lead,
+            status: parseSellerLeadStatus(lead.status, 'New Inquiry'),
+          }),
+        ),
       ),
       pagination,
       total,
@@ -147,11 +176,23 @@ export class SellerLeadsService {
 
   async findOne(id: string) {
     const sellerLead = await this.getLeadRecordOrThrow(id);
-    return { sellerLead: mapSellerLeadResponse(sellerLead) };
+    return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
   }
 
-  async update(id: string, updateSellerLeadDto: UpdateSellerLeadDto) {
-    await this.getLeadRecordOrThrow(id);
+  async update(
+    id: string,
+    updateSellerLeadDto: UpdateSellerLeadDto,
+    currentUser: CurrentUser,
+  ) {
+    const existingLead = await this.getLeadRecordOrThrow(id);
+    const nextStatus =
+      updateSellerLeadDto.status !== undefined
+        ? parseSellerLeadStatus(updateSellerLeadDto.status, existingLead.status)
+        : existingLead.status;
+
+    if (existingLead.status === 'Rejected' && nextStatus === 'Approved to Buy') {
+      throw new BadRequestException('Rejected seller leads cannot be approved');
+    }
 
     await this.db
       .updateTable('crm.seller_leads')
@@ -204,7 +245,7 @@ export class SellerLeadsService {
           ? { vehicle_variant: updateSellerLeadDto.vehicleVariant ?? null }
           : {}),
         ...(updateSellerLeadDto.askingPrice !== undefined
-          ? { asking_price: updateSellerLeadDto.askingPrice ?? null }
+          ? { asking_price: normalizeOptionalMoney(updateSellerLeadDto.askingPrice) }
           : {}),
         ...(updateSellerLeadDto.region !== undefined
           ? { region: updateSellerLeadDto.region ?? null }
@@ -212,12 +253,63 @@ export class SellerLeadsService {
         ...(updateSellerLeadDto.notes !== undefined
           ? { notes: updateSellerLeadDto.notes ?? null }
           : {}),
-        ...(updateSellerLeadDto.status !== undefined
+        ...(updateSellerLeadDto.inspectionCompletedAt !== undefined
           ? {
-              status: parseSellerLeadStatus(
-                updateSellerLeadDto.status,
-                'New Inquiry',
+              inspection_completed_at: parseOptionalIsoDate(
+                updateSellerLeadDto.inspectionCompletedAt,
               ),
+            }
+          : {}),
+        ...(updateSellerLeadDto.inspectionNotes !== undefined
+          ? { inspection_notes: updateSellerLeadDto.inspectionNotes ?? null }
+          : {}),
+        ...(updateSellerLeadDto.inspectionFindings !== undefined
+          ? {
+              inspection_findings: parseInspectionFindings(
+                updateSellerLeadDto.inspectionFindings,
+              ),
+            }
+          : {}),
+        ...(updateSellerLeadDto.targetBuyPrice !== undefined
+          ? {
+              target_buy_price: normalizeOptionalMoney(
+                updateSellerLeadDto.targetBuyPrice,
+              ),
+            }
+          : {}),
+        ...(updateSellerLeadDto.expectedResalePrice !== undefined
+          ? {
+              expected_resale_price: normalizeOptionalMoney(
+                updateSellerLeadDto.expectedResalePrice,
+              ),
+            }
+          : {}),
+        ...(updateSellerLeadDto.targetProfitAmount !== undefined
+          ? {
+              target_profit_amount: normalizeOptionalMoney(
+                updateSellerLeadDto.targetProfitAmount,
+              ),
+            }
+          : {}),
+        ...(updateSellerLeadDto.decision !== undefined
+          ? { decision: parseSellerLeadDecision(updateSellerLeadDto.decision) }
+          : {}),
+        ...(updateSellerLeadDto.decisionNote !== undefined
+          ? { decision_note: updateSellerLeadDto.decisionNote ?? null }
+          : {}),
+        ...(updateSellerLeadDto.status !== undefined ? { status: nextStatus } : {}),
+        ...(updateSellerLeadDto.status === 'Approved to Buy'
+          ? {
+              approved_to_buy_at: new Date(),
+              approved_by_user_id: currentUser.id,
+            }
+          : {}),
+        ...(updateSellerLeadDto.status !== undefined &&
+        updateSellerLeadDto.status !== 'Approved to Buy' &&
+        existingLead.status === 'Approved to Buy'
+          ? {
+              approved_to_buy_at: null,
+              approved_by_user_id: null,
             }
           : {}),
         ...(updateSellerLeadDto.assigneeUserId !== undefined
@@ -232,20 +324,43 @@ export class SellerLeadsService {
       .execute();
 
     const sellerLead = await this.getLeadRecordOrThrow(id);
-    return { sellerLead: mapSellerLeadResponse(sellerLead) };
+    return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
+  }
+
+  async createEstimatedCost(id: string, dto: SellerLeadEstimatedCostDto) {
+    await this.getLeadRecordOrThrow(id);
+
+    await this.db
+      .insertInto('crm.seller_lead_estimated_costs')
+      .values({
+        seller_lead_id: id,
+        category: parseSellerLeadEstimatedCostCategory(dto.category),
+        amount: normalizeSellerLeadEstimatedCostAmount(dto.amount),
+        note: normalizeSellerLeadEstimatedCostNote(dto.note),
+      })
+      .executeTakeFirstOrThrow();
+
+    const sellerLead = await this.getLeadRecordOrThrow(id);
+    return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
+  }
+
+  async deleteEstimatedCost(id: string, costId: string) {
+    await this.getLeadRecordOrThrow(id);
+    await this.getEstimatedCostOrThrow(id, costId);
+
+    await this.db
+      .deleteFrom('crm.seller_lead_estimated_costs')
+      .where('id', '=', costId)
+      .where('seller_lead_id', '=', id)
+      .execute();
+
+    const sellerLead = await this.getLeadRecordOrThrow(id);
+    return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
   }
 
   async convert(id: string, convertSellerLeadDto: ConvertSellerLeadDto) {
     return this.db.transaction().execute(async (trx) => {
-      const sellerLead = await trx
-        .selectFrom('crm.seller_leads')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirst();
-
-      if (!sellerLead) {
-        throw new NotFoundException(`Seller lead ${id} was not found`);
-      }
+      const sellerLead = await this.getLeadRecordOrThrow(id, trx);
 
       const existingVehicle = await trx
         .selectFrom('inventory.vehicles')
@@ -271,6 +386,12 @@ export class SellerLeadsService {
         );
       }
 
+      if (sellerLead.status !== 'Approved to Buy') {
+        throw new BadRequestException(
+          'Seller lead must be approved to buy before conversion',
+        );
+      }
+
       const vehicleModel = this.vehiclesService.buildVehicleCreateModel({
         brand: sellerLead.vehicle_brand,
         model: sellerLead.vehicle_model,
@@ -284,7 +405,9 @@ export class SellerLeadsService {
         features: convertSellerLeadDto.features,
         remarks: convertSellerLeadDto.remarks,
         purchasePrice:
-          convertSellerLeadDto.purchasePrice ?? sellerLead.asking_price,
+          convertSellerLeadDto.purchasePrice ??
+          sellerLead.target_buy_price ??
+          sellerLead.asking_price,
         targetSellingPrice: convertSellerLeadDto.targetSellingPrice,
         minimumAcceptablePrice: convertSellerLeadDto.minimumAcceptablePrice,
         acquisitionSource:
@@ -293,7 +416,9 @@ export class SellerLeadsService {
         status: convertSellerLeadDto.status ?? 'Incoming',
         photos: convertSellerLeadDto.photos,
       });
-      const stockNumber = await this.vehiclesService.allocateStockNumber(trx);
+      const stockNumber = await this.vehiclesService.allocateStockNumber(
+        trx as any,
+      );
 
       const insertedVehicle = await trx
         .insertInto('inventory.vehicles')
@@ -343,12 +468,7 @@ export class SellerLeadsService {
         .where('id', '=', id)
         .execute();
 
-      const updatedLead = await trx
-        .selectFrom('crm.seller_leads')
-        .selectAll()
-        .where('id', '=', id)
-        .executeTakeFirstOrThrow();
-
+      const updatedLead = await this.getLeadRecordOrThrow(id, trx);
       const persistedVehicle = await trx
         .selectFrom('inventory.vehicles')
         .selectAll()
@@ -363,10 +483,7 @@ export class SellerLeadsService {
         .execute();
 
       return {
-        sellerLead: mapSellerLeadResponse({
-          ...updatedLead,
-          status: parseSellerLeadStatus(updatedLead.status, 'Purchased'),
-        }),
+        sellerLead: await this.buildSellerLeadResponse(updatedLead, trx),
         vehicle: mapVehicleResponse({
           ...persistedVehicle,
           status: parseVehicleStatus(persistedVehicle.status, 'Incoming'),
@@ -381,8 +498,32 @@ export class SellerLeadsService {
     });
   }
 
-  private async getLeadRecordOrThrow(id: string) {
-    const sellerLead = await this.db
+  private async buildSellerLeadResponse(
+    sellerLead: Awaited<ReturnType<typeof this.getLeadRecordOrThrow>>,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
+    const estimatedCosts = await this.getEstimatedCosts(sellerLead.id, executor);
+    const summary = calculateSellerLeadEvaluationSummary({
+      askingPrice: sellerLead.asking_price,
+      targetBuyPrice: sellerLead.target_buy_price,
+      expectedResalePrice: sellerLead.expected_resale_price,
+      targetProfitAmount: sellerLead.target_profit_amount,
+      estimatedCosts,
+    });
+
+    return mapSellerLeadResponse({
+      ...sellerLead,
+      estimatedCosts: estimatedCosts.map(mapSellerLeadEstimatedCostResponse),
+      ...summary,
+    });
+  }
+
+  private async getLeadRecordOrThrow(
+    id: string,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
+    const db = executor ?? this.db;
+    const sellerLead = await db
       .selectFrom('crm.seller_leads')
       .selectAll()
       .where('id', '=', id)
@@ -395,7 +536,38 @@ export class SellerLeadsService {
     return {
       ...sellerLead,
       status: parseSellerLeadStatus(sellerLead.status, 'New Inquiry'),
+      decision: parseSellerLeadDecision(sellerLead.decision),
     };
+  }
+
+  private async getEstimatedCosts(
+    sellerLeadId: string,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
+    const db = executor ?? this.db;
+    return db
+      .selectFrom('crm.seller_lead_estimated_costs')
+      .selectAll()
+      .where('seller_lead_id', '=', sellerLeadId)
+      .orderBy('created_at', 'asc')
+      .execute();
+  }
+
+  private async getEstimatedCostOrThrow(sellerLeadId: string, costId: string) {
+    const estimatedCost = await this.db
+      .selectFrom('crm.seller_lead_estimated_costs')
+      .selectAll()
+      .where('id', '=', costId)
+      .where('seller_lead_id', '=', sellerLeadId)
+      .executeTakeFirst();
+
+    if (!estimatedCost) {
+      throw new NotFoundException(
+        `Estimated cost ${costId} was not found for seller lead ${sellerLeadId}`,
+      );
+    }
+
+    return estimatedCost;
   }
 
   private requireNonEmpty(value: string, field: string) {
