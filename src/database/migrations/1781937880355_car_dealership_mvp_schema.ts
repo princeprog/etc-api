@@ -3,13 +3,13 @@ import { sql, type Kysely } from 'kysely';
 // `any` is required here since migrations should be frozen in time. alternatively, keep a "snapshot" db interface.
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`create extension if not exists pgcrypto`.execute(db);
-  await db.schema.createSchema('auth').ifNotExists().execute();
+  await db.schema.createSchema('authentication').ifNotExists().execute();
   await db.schema.createSchema('crm').ifNotExists().execute();
   await db.schema.createSchema('inventory').ifNotExists().execute();
   await db.schema.createSchema('sales').ifNotExists().execute();
 
   await db.schema
-    .createTable('auth.users')
+    .createTable('authentication.users')
     .addColumn('id', 'uuid', (col) =>
       col.primaryKey().defaultTo(sql`gen_random_uuid()`),
     )
@@ -45,7 +45,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('notes', 'text')
     .addColumn('status', 'varchar(32)', (col) => col.notNull())
     .addColumn('assignee_user_id', 'uuid', (col) =>
-      col.references('auth.users.id').onDelete('set null').onUpdate('cascade'),
+      col.references('authentication.users.id').onDelete('set null').onUpdate('cascade'),
     )
     .addColumn('latest_activity_at', 'timestamptz')
     .addColumn('closing_note', 'text')
@@ -71,7 +71,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('notes', 'text')
     .addColumn('status', 'varchar(32)', (col) => col.notNull())
     .addColumn('assignee_user_id', 'uuid', (col) =>
-      col.references('auth.users.id').onDelete('set null').onUpdate('cascade'),
+      col.references('authentication.users.id').onDelete('set null').onUpdate('cascade'),
     )
     .addColumn('latest_activity_at', 'timestamptz')
     .addColumn('closing_note', 'text')
@@ -187,7 +187,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('activity_type', 'varchar(64)', (col) => col.notNull())
     .addColumn('note', 'text', (col) => col.notNull())
     .addColumn('performed_by_user_id', 'uuid', (col) =>
-      col.references('auth.users.id').onDelete('set null').onUpdate('cascade'),
+      col.references('authentication.users.id').onDelete('set null').onUpdate('cascade'),
     )
     .addColumn('created_at', 'timestamptz', (col) =>
       col.notNull().defaultTo(sql`now()`),
@@ -215,7 +215,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('assignee_user_id', 'uuid', (col) =>
       col
         .notNull()
-        .references('auth.users.id')
+        .references('authentication.users.id')
         .onDelete('restrict')
         .onUpdate('cascade'),
     )
@@ -255,7 +255,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('created_by_user_id', 'uuid', (col) =>
       col
         .notNull()
-        .references('auth.users.id')
+        .references('authentication.users.id')
         .onDelete('restrict')
         .onUpdate('cascade'),
     )
@@ -393,9 +393,9 @@ export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable('inventory.vehicles').ifExists().execute();
   await db.schema.dropTable('crm.buyer_leads').ifExists().execute();
   await db.schema.dropTable('crm.seller_leads').ifExists().execute();
-  await db.schema.dropTable('auth.users').ifExists().execute();
+  await db.schema.dropTable('authentication.users').ifExists().execute();
   await db.schema.dropSchema('sales').ifExists().execute();
   await db.schema.dropSchema('inventory').ifExists().execute();
   await db.schema.dropSchema('crm').ifExists().execute();
-  await db.schema.dropSchema('auth').ifExists().execute();
+  await db.schema.dropSchema('authentication').ifExists().execute();
 }
