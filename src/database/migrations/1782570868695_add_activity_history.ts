@@ -1,11 +1,14 @@
 import { Kysely, sql } from 'kysely';
 
+// `any` is required here since migrations should be frozen in time. alternatively, keep a "snapshot" db interface.
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.createSchema('ops').ifNotExists().execute();
 
   await db.schema
     .createTable('ops.activity_history')
-    .addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`gen_random_uuid()`))
+    .addColumn('id', 'uuid', (col) =>
+      col.primaryKey().defaultTo(sql`gen_random_uuid()`),
+    )
     .addColumn('actor_user_id', 'uuid', (col) =>
       col.references('auth.users.id').onDelete('set null').onUpdate('cascade'),
     )
@@ -15,7 +18,9 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('action_type', 'varchar(128)', (col) => col.notNull())
     .addColumn('summary', 'varchar(512)', (col) => col.notNull())
     .addColumn('metadata', 'jsonb')
-    .addColumn('created_at', 'timestamptz', (col) => col.notNull().defaultTo(sql`now()`))
+    .addColumn('created_at', 'timestamptz', (col) =>
+      col.notNull().defaultTo(sql`now()`),
+    )
     .execute();
 
   await db.schema
@@ -25,8 +30,12 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 }
 
+// `any` is required here since migrations should be frozen in time. alternatively, keep a "snapshot" db interface.
 export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropIndex('activity_history_entity_created_idx').ifExists().execute();
+  await db.schema
+    .dropIndex('activity_history_entity_created_idx')
+    .ifExists()
+    .execute();
   await db.schema.dropTable('ops.activity_history').ifExists().execute();
   await db.schema.dropSchema('ops').ifExists().execute();
 }
