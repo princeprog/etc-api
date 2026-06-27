@@ -133,8 +133,251 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
     });
   });
 
+  it('stores acquisition evaluation data and returns computed recommendation summary', async () => {
+    const leadResponse = await createSellerLead(app, authCookies);
+    const leadId = leadResponse.body.sellerLead.id;
+
+    await request(app.getHttpServer())
+      .post(`/seller-leads/${leadId}/estimated-costs`)
+      .set('Cookie', authCookies)
+      .send({
+        category: 'repair',
+        amount: '15000.00',
+        note: 'Front suspension work',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/seller-leads/${leadId}/estimated-costs`)
+      .set('Cookie', authCookies)
+      .send({
+        category: 'reconditioning',
+        amount: '8000.00',
+        note: 'Paint correction and detailing',
+      })
+      .expect(201);
+
+    const updateResponse = await request(app.getHttpServer())
+      .patch(`/seller-leads/${leadId}`)
+      .set('Cookie', authCookies)
+      .send({
+        status: 'Evaluated',
+        targetBuyPrice: '1180000.00',
+        expectedResalePrice: '1380000.00',
+        targetProfitAmount: '100000.00',
+        decision: 'Negotiate',
+        decisionNote: 'Proceed if seller accepts target buy price.',
+        inspectionCompletedAt: '2026-06-27T03:00:00.000Z',
+        inspectionNotes: 'Unit runs well but suspension noise is present.',
+        inspectionFindings: {
+          engine: { rating: 'good', notes: 'No unusual noise' },
+          transmission: { rating: 'good', notes: 'Smooth shifting' },
+          suspension: { rating: 'fair', notes: 'Front knocks on bumps' },
+          brakes: { rating: 'good', notes: 'Pads still usable' },
+          tires: { rating: 'fair', notes: 'Will need replacement soon' },
+          exterior: { rating: 'fair', notes: 'Minor scratches on rear bumper' },
+          interior: { rating: 'good', notes: 'Clean cabin overall' },
+          ac: { rating: 'good', notes: 'Cold air' },
+          electrical: { rating: 'good', notes: 'All lights working' },
+          papers: { rating: 'good', notes: 'Complete OR/CR' },
+        },
+      })
+      .expect(200);
+
+    expect(updateResponse.body.sellerLead).toEqual(
+      expect.objectContaining({
+        id: leadId,
+        status: 'Evaluated',
+        targetBuyPrice: '1180000.00',
+        expectedResalePrice: '1380000.00',
+        targetProfitAmount: '100000.00',
+        decision: 'Negotiate',
+        estimatedCostsTotal: '23000.00',
+        estimatedTotalInvestment: '1203000.00',
+        estimatedGrossProfit: '177000.00',
+        estimatedProfitMargin: '12.83',
+        recommendedAction: 'Buy',
+        inspectionCompletedAt: '2026-06-27T03:00:00.000Z',
+        inspectionNotes: 'Unit runs well but suspension noise is present.',
+        inspectionFindings: expect.objectContaining({
+          suspension: expect.objectContaining({
+            rating: 'fair',
+            notes: 'Front knocks on bumps',
+          }),
+        }),
+        estimatedCosts: expect.arrayContaining([
+          expect.objectContaining({
+            category: 'repair',
+            amount: '15000.00',
+          }),
+          expect.objectContaining({
+            category: 'reconditioning',
+            amount: '8000.00',
+          }),
+        ]),
+      }),
+    );
+
+    const detailResponse = await request(app.getHttpServer())
+      .get(`/seller-leads/${leadId}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(detailResponse.body.sellerLead).toEqual(
+      expect.objectContaining({
+        id: leadId,
+        estimatedCostsTotal: '23000.00',
+        estimatedTotalInvestment: '1203000.00',
+        recommendedAction: 'Buy',
+      }),
+    );
+    expect(detailResponse.body.sellerLead.estimatedCosts).toHaveLength(2);
+  });
+
+  it('requires approval before conversion and uses the approved buy price as vehicle purchase price', async () => {
+    const leadResponse = await createSellerLead(app, authCookies);
+    const leadId = leadResponse.body.sellerLead.id;
+
+    await request(app.getHttpServer())
+      .patch(`/seller-leads/${leadId}`)
+      .set('Cookie', authCookies)
+      .send({
+        status: 'Evaluated',
+        targetBuyPrice: '1195000.00',
+        expectedResalePrice: '1400000.00',
+        targetProfitAmount: '90000.00',
+        decision: 'Buy',
+      })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post(`/seller-leads/${leadId}/convert`)
+      .set('Cookie', authCookies)
+      .send({
+        year: 2021,
+        targetSellingPrice: '1400000.00',
+        minimumAcceptablePrice: '1360000.00',
+        status: 'Incoming',
+      })
+      .expect(400);
+
+    const approvalResponse = await request(app.getHttpServer())
+      .patch(`/seller-leads/${leadId}`)
+      .set('Cookie', authCookies)
+      .send({
+        status: 'Approved to Buy',
+      })
+      .expect(200);
+
+    expect(approvalResponse.body.sellerLead).toEqual(
+      expect.objectContaining({
+        status: 'Approved to Buy',
+        approvedToBuyAt: expect.any(String),
+        approvedByUserId: expect.any(String),
+      }),
+    );
+
+    const convertResponse = await request(app.getHttpServer())
+      .post(`/seller-leads/${leadId}/convert`)
+      .set('Cookie', authCookies)
+      .send({
+        year: 2021,
+        targetSellingPrice: '1400000.00',
+        minimumAcceptablePrice: '1360000.00',
+        status: 'Incoming',
+      })
+      .expect(201);
+
+    expect(convertResponse.body).toEqual({
+      sellerLead: expect.objectContaining({
+        id: leadId,
+        status: 'Purchased',
+      }),
+      vehicle: expect.objectContaining({
+        sellerLeadId: leadId,
+        purchasePrice: '1195000.00',
+      }),
+    });
+  });
+
+  it('creates and deletes seller lead estimated costs while returning updated evaluation totals', async () => {
+    const leadResponse = await createSellerLead(app, authCookies);
+    const leadId = leadResponse.body.sellerLead.id;
+
+    await request(app.getHttpServer())
+      .patch(`/seller-leads/${leadId}`)
+      .set('Cookie', authCookies)
+      .send({
+        targetBuyPrice: '1200000.00',
+        expectedResalePrice: '1390000.00',
+        targetProfitAmount: '80000.00',
+      })
+      .expect(200);
+
+    const firstCostResponse = await request(app.getHttpServer())
+      .post(`/seller-leads/${leadId}/estimated-costs`)
+      .set('Cookie', authCookies)
+      .send({
+        category: 'documentation',
+        amount: '2500.00',
+        note: 'Transfer fees',
+      })
+      .expect(201);
+
+    expect(firstCostResponse.body.sellerLead).toEqual(
+      expect.objectContaining({
+        estimatedCostsTotal: '2500.00',
+        estimatedTotalInvestment: '1202500.00',
+        estimatedGrossProfit: '187500.00',
+      }),
+    );
+
+    const costId = firstCostResponse.body.sellerLead.estimatedCosts[0].id;
+
+    const secondCostResponse = await request(app.getHttpServer())
+      .post(`/seller-leads/${leadId}/estimated-costs`)
+      .set('Cookie', authCookies)
+      .send({
+        category: 'transport',
+        amount: '3500.00',
+        note: 'Hauling from Bulacan',
+      })
+      .expect(201);
+
+    expect(secondCostResponse.body.sellerLead).toEqual(
+      expect.objectContaining({
+        estimatedCostsTotal: '6000.00',
+        estimatedTotalInvestment: '1206000.00',
+        estimatedGrossProfit: '184000.00',
+      }),
+    );
+
+    const deleteResponse = await request(app.getHttpServer())
+      .delete(`/seller-leads/${leadId}/estimated-costs/${costId}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(deleteResponse.body.sellerLead).toEqual(
+      expect.objectContaining({
+        estimatedCostsTotal: '3500.00',
+        estimatedTotalInvestment: '1203500.00',
+        estimatedGrossProfit: '186500.00',
+      }),
+    );
+    expect(deleteResponse.body.sellerLead.estimatedCosts).toHaveLength(1);
+  });
+
   it('converts a seller lead into a linked vehicle and marks the lead as purchased', async () => {
     const leadResponse = await createSellerLead(app, authCookies);
+
+    await request(app.getHttpServer())
+      .patch(`/seller-leads/${leadResponse.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .send({
+        status: 'Approved to Buy',
+        targetBuyPrice: '540000.00',
+      })
+      .expect(200);
 
     const convertResponse = await request(app.getHttpServer())
       .post(`/seller-leads/${leadResponse.body.sellerLead.id}/convert`)
