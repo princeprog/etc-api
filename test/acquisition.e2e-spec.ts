@@ -39,14 +39,14 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('auth.sessions').execute();
+    await db.deleteFrom('authentication.sessions').execute();
     await db
-      .deleteFrom('auth.users')
+      .deleteFrom('authentication.users')
       .where('email', '=', ADMIN_EMAIL)
       .execute();
 
     await db
-      .insertInto('auth.users')
+      .insertInto('authentication.users')
       .values({
         email: ADMIN_EMAIL,
         password_hash: await hashPassword(PASSWORD),
@@ -76,9 +76,9 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
     await db.deleteFrom('inventory.vehicle_photos').execute();
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('auth.sessions').execute();
+    await db.deleteFrom('authentication.sessions').execute();
     await db
-      .deleteFrom('auth.users')
+      .deleteFrom('authentication.users')
       .where('email', '=', ADMIN_EMAIL)
       .execute();
     await app.close();

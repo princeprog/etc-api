@@ -40,7 +40,6 @@ export interface UsersTable {
   role: RoleName;
   must_change_password: Generated<boolean>;
   active: Generated<boolean>;
-  must_change_password: Generated<boolean>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -200,8 +199,8 @@ export interface CommissionsTable {
 }
 
 export interface DB {
-  'auth.users': UsersTable;
-  'auth.sessions': SessionsTable;
+  'authentication.users': UsersTable;
+  'authentication.sessions': SessionsTable;
   'inventory.vehicles': VehiclesTable;
   'inventory.vehicle_photos': VehiclePhotosTable;
   'inventory.vehicle_tracked_costs': VehicleTrackedCostsTable;

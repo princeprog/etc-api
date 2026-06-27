@@ -11,13 +11,13 @@ async function bootstrapAdmin() {
 
   try {
     const existingUsers = await db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .select(({ fn }) => fn.count<string>('id').as('count'))
       .executeTakeFirstOrThrow();
 
     if (Number(existingUsers.count) > 0) {
       throw new Error(
-        'Bootstrap admin creation is disabled because auth.users already contains records',
+        'Bootstrap admin creation is disabled because authentication.users already contains records',
       );
     }
 
@@ -26,7 +26,7 @@ async function bootstrapAdmin() {
     const fullName = requireEnv('BOOTSTRAP_ADMIN_FULL_NAME').trim();
 
     const insertedUser = await db
-      .insertInto('auth.users')
+      .insertInto('authentication.users')
       .values({
         email,
         password_hash: await hashPassword(password),

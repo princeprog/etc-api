@@ -47,14 +47,14 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.buyer_leads').execute();
     await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('auth.sessions').execute();
+    await db.deleteFrom('authentication.sessions').execute();
     await db
-      .deleteFrom('auth.users')
+      .deleteFrom('authentication.users')
       .where('email', '=', ADMIN_EMAIL)
       .execute();
 
     const user = await db
-      .insertInto('auth.users')
+      .insertInto('authentication.users')
       .values({
         email: ADMIN_EMAIL,
         password_hash: await hashPassword(PASSWORD),
@@ -211,9 +211,9 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.buyer_leads').execute();
     await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('auth.sessions').execute();
+    await db.deleteFrom('authentication.sessions').execute();
     await db
-      .deleteFrom('auth.users')
+      .deleteFrom('authentication.users')
       .where('email', '=', ADMIN_EMAIL)
       .execute();
     await app.close();

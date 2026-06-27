@@ -55,7 +55,7 @@ export class AuthService {
     }
 
     const user = await this.db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .selectAll()
       .where('email', '=', email)
       .executeTakeFirst();
@@ -112,26 +112,29 @@ export class AuthService {
     }
 
     const session = await this.db
-      .selectFrom('auth.sessions')
-      .innerJoin('auth.users', 'auth.users.id', 'auth.sessions.user_id')
+      .selectFrom('authentication.sessions')
+      .innerJoin(
+        'authentication.users',
+        'authentication.users.id',
+        'authentication.sessions.user_id',
+      )
       .select([
-        'auth.sessions.id as sessionId',
-        'auth.sessions.user_id as userId',
-        'auth.sessions.refresh_token_hash as refreshTokenHash',
-        'auth.sessions.expires_at as expiresAt',
-        'auth.sessions.revoked_at as revokedAt',
-        'auth.users.id as userRecordId',
-        'auth.users.email as userEmail',
-        'auth.users.full_name as userFullName',
-        'auth.users.role as userRole',
-        'auth.users.must_change_password as userMustChangePassword',
-        'auth.users.password_hash as userPasswordHash',
-        'auth.users.active as userActive',
-        'auth.users.must_change_password as userMustChangePassword',
-        'auth.users.created_at as userCreatedAt',
-        'auth.users.updated_at as userUpdatedAt',
+        'authentication.sessions.id as sessionId',
+        'authentication.sessions.user_id as userId',
+        'authentication.sessions.refresh_token_hash as refreshTokenHash',
+        'authentication.sessions.expires_at as expiresAt',
+        'authentication.sessions.revoked_at as revokedAt',
+        'authentication.users.id as userRecordId',
+        'authentication.users.email as userEmail',
+        'authentication.users.full_name as userFullName',
+        'authentication.users.role as userRole',
+        'authentication.users.password_hash as userPasswordHash',
+        'authentication.users.active as userActive',
+        'authentication.users.must_change_password as userMustChangePassword',
+        'authentication.users.created_at as userCreatedAt',
+        'authentication.users.updated_at as userUpdatedAt',
       ])
-      .where('auth.sessions.id', '=', payload.sessionId)
+      .where('authentication.sessions.id', '=', payload.sessionId)
       .executeTakeFirst();
 
     if (!session || !session.userActive || session.userId !== payload.sub) {
@@ -155,7 +158,6 @@ export class AuthService {
       email: session.userEmail,
       full_name: session.userFullName,
       role: parseRole(session.userRole),
-      must_change_password: session.userMustChangePassword,
       password_hash: session.userPasswordHash,
       active: session.userActive,
       must_change_password: session.userMustChangePassword,
@@ -214,7 +216,7 @@ export class AuthService {
     }
 
     const existingUser = await this.db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .select(['id'])
       .where('email', '=', email)
       .executeTakeFirst();
@@ -224,7 +226,7 @@ export class AuthService {
     }
 
     const insertedUser = await this.db
-      .insertInto('auth.users')
+      .insertInto('authentication.users')
       .values({
         email,
         password_hash: await hashPassword(password),
@@ -242,7 +244,7 @@ export class AuthService {
     const search = query.search?.trim();
     const status = query.status?.trim();
     let usersQuery = this.db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .selectAll()
       .where('role', '=', 'staff');
 
@@ -298,7 +300,7 @@ export class AuthService {
     }
 
     const existingUser = await this.db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .selectAll()
       .where('id', '=', userId)
       .executeTakeFirst();
@@ -312,7 +314,7 @@ export class AuthService {
     }
 
     const updatedUser = await this.db
-      .updateTable('auth.users')
+      .updateTable('authentication.users')
       .set({
         active: updateUserStatusDto.active,
         updated_at: new Date(),
@@ -323,7 +325,7 @@ export class AuthService {
 
     if (!updateUserStatusDto.active) {
       await this.db
-        .deleteFrom('auth.sessions')
+        .deleteFrom('authentication.sessions')
         .where('user_id', '=', userId)
         .execute();
     }
@@ -348,7 +350,7 @@ export class AuthService {
     }
 
     const user = await this.db
-      .selectFrom('auth.users')
+      .selectFrom('authentication.users')
       .selectAll()
       .where('id', '=', currentUser.id)
       .executeTakeFirst();
@@ -364,7 +366,7 @@ export class AuthService {
     }
 
     const updatedUser = await this.db
-      .updateTable('auth.users')
+      .updateTable('authentication.users')
       .set({
         password_hash: await hashPassword(newPassword),
         must_change_password: false,
@@ -390,7 +392,7 @@ export class AuthService {
     const refreshTokenHash = hashToken(refreshToken);
 
     const session = await this.db
-      .insertInto('auth.sessions')
+      .insertInto('authentication.sessions')
       .values({
         user_id: user.id,
         current_access_token_jti: accessTokenJti,
@@ -409,7 +411,7 @@ export class AuthService {
     );
 
     await this.db
-      .updateTable('auth.sessions')
+      .updateTable('authentication.sessions')
       .set({
         refresh_token_hash: finalRefreshTokenHash,
         updated_at: new Date(),
@@ -434,7 +436,7 @@ export class AuthService {
     );
 
     await this.db
-      .updateTable('auth.sessions')
+      .updateTable('authentication.sessions')
       .set({
         refresh_token_hash: hashToken(nextRefreshToken),
         current_access_token_jti: nextAccessTokenJti,
@@ -451,7 +453,7 @@ export class AuthService {
 
   private async revokeSession(sessionId: string): Promise<void> {
     await this.db
-      .updateTable('auth.sessions')
+      .updateTable('authentication.sessions')
       .set({
         revoked_at: new Date(),
         updated_at: new Date(),
@@ -547,7 +549,6 @@ export class AuthService {
     role: string;
     must_change_password: boolean;
     active: boolean;
-    must_change_password: boolean;
     created_at: Date;
     updated_at: Date;
   }): User {
