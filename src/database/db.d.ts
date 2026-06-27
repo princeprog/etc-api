@@ -450,21 +450,41 @@ export interface CrmLeadVehicleLinks {
   vehicle_id: string;
 }
 
+export interface CrmSellerLeadEstimatedCosts {
+  amount: Numeric;
+  category: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  note: string;
+  seller_lead_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface CrmSellerLeads {
+  approved_by_user_id: string | null;
+  approved_to_buy_at: Timestamp | null;
   asking_price: Numeric | null;
   assignee_user_id: string | null;
   closing_note: string | null;
   contact_number: string;
   created_at: Generated<Timestamp>;
+  decision: string | null;
+  decision_note: string | null;
   email: string | null;
+  expected_resale_price: Numeric | null;
   facebook_name: string | null;
   id: Generated<string>;
   inquiry_source: string | null;
+  inspection_completed_at: Timestamp | null;
+  inspection_findings: Json | null;
+  inspection_notes: string | null;
   latest_activity_at: Timestamp | null;
   notes: string | null;
   region: string | null;
   seller_name: string;
   status: string;
+  target_buy_price: Numeric | null;
+  target_profit_amount: Numeric | null;
   updated_at: Generated<Timestamp>;
   vehicle_brand: string;
   vehicle_model: string;
@@ -571,6 +591,18 @@ export interface InventoryVehicleTrackedCosts {
   vehicle_id: string;
 }
 
+export interface OpsActivityHistory {
+  action_type: string;
+  actor_display_name: string | null;
+  actor_user_id: string | null;
+  created_at: Generated<Timestamp>;
+  entity_id: string;
+  entity_type: string;
+  id: Generated<string>;
+  metadata: Json | null;
+  summary: string;
+}
+
 export interface RealtimeMessages {
   binary_payload: Buffer | null;
   event: string | null;
@@ -659,159 +691,7 @@ export interface StorageBucketsVectors {
   created_at: Generated<Timestamp>;
   id: string;
   type: Generated<StorageBuckettype>;
-}
-
-export interface CrmBuyerLeads {
-  assignee_user_id: string | null;
-  buyer_name: string;
-  closing_note: string | null;
-  contact_number: string;
-  created_at: Generated<Timestamp>;
-  desired_budget: Numeric | null;
-  email: string | null;
-  facebook_name: string | null;
-  id: Generated<string>;
-  inquiry_source: string | null;
-  latest_activity_at: Timestamp | null;
-  notes: string | null;
-  status: string;
   updated_at: Generated<Timestamp>;
-}
-
-export interface CrmFollowUps {
-  assignee_user_id: string;
-  buyer_lead_id: string | null;
-  completed_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  due_at: Timestamp;
-  id: Generated<string>;
-  lead_type: string;
-  note: string;
-  outcome_note: string | null;
-  seller_lead_id: string | null;
-  status: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface CrmLeadActivities {
-  activity_type: string;
-  buyer_lead_id: string | null;
-  created_at: Generated<Timestamp>;
-  id: Generated<string>;
-  lead_type: string;
-  note: string;
-  performed_by_user_id: string | null;
-  seller_lead_id: string | null;
-}
-
-export interface CrmLeadVehicleLinks {
-  buyer_lead_id: string;
-  created_at: Generated<Timestamp>;
-  id: Generated<string>;
-  vehicle_id: string;
-}
-
-export interface CrmSellerLeads {
-  asking_price: Numeric | null;
-  assignee_user_id: string | null;
-  closing_note: string | null;
-  contact_number: string;
-  created_at: Generated<Timestamp>;
-  email: string | null;
-  facebook_name: string | null;
-  id: Generated<string>;
-  inquiry_source: string | null;
-  latest_activity_at: Timestamp | null;
-  notes: string | null;
-  region: string | null;
-  seller_name: string;
-  status: string;
-  updated_at: Generated<Timestamp>;
-  vehicle_brand: string;
-  vehicle_model: string;
-  vehicle_variant: string | null;
-  vehicle_year: number | null;
-}
-
-export interface InventoryVehiclePhotos {
-  created_at: Generated<Timestamp>;
-  file_url: string;
-  id: Generated<string>;
-  sort_order: Generated<number>;
-  vehicle_id: string;
-}
-
-export interface InventoryVehicles {
-  acquisition_source: string | null;
-  brand: string;
-  color: string | null;
-  created_at: Generated<Timestamp>;
-  features: string | null;
-  fuel_type: string | null;
-  id: Generated<string>;
-  mileage: number | null;
-  minimum_acceptable_price: Numeric | null;
-  model: string;
-  purchase_price: Numeric | null;
-  region: string | null;
-  remarks: string | null;
-  seller_lead_id: string | null;
-  status: string;
-  stock_number: string;
-  target_selling_price: Numeric | null;
-  transmission: string | null;
-  updated_at: Generated<Timestamp>;
-  variant: string | null;
-  year: number;
-}
-
-export interface InventoryVehicleTrackedCosts {
-  amount: Numeric;
-  category: string;
-  created_at: Generated<Timestamp>;
-  id: Generated<string>;
-  note: string;
-  updated_at: Generated<Timestamp>;
-  vehicle_id: string;
-}
-export interface OpsActivityHistory {
-  action_type: string;
-  actor_display_name: string | null;
-  actor_user_id: string | null;
-  created_at: Generated<Timestamp>;
-  entity_id: string;
-  entity_type: string;
-  id: Generated<string>;
-  metadata: Record<string, unknown> | null;
-  summary: string;
-}
-
-export interface SalesCommissions {
-  agent_name: string | null;
-  created_at: Generated<Timestamp>;
-  default_amount: Numeric | null;
-  final_amount: Numeric;
-  id: Generated<string>;
-  override_amount: Numeric | null;
-  override_reason: string | null;
-  sale_id: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface SalesSales {
-  agent_name: string | null;
-  buyer_lead_id: string;
-  commission_locked: Generated<boolean>;
-  commission_method: string | null;
-  created_at: Generated<Timestamp>;
-  created_by_user_id: string;
-  final_sale_amount: Numeric;
-  gross_profit_amount: Numeric | null;
-  id: Generated<string>;
-  sale_date: Timestamp;
-  sale_number: string;
-  updated_at: Generated<Timestamp>;
-  vehicle_id: string;
 }
 
 export interface StorageMigrations {
@@ -930,6 +810,7 @@ export interface DB {
   "crm.follow_ups": CrmFollowUps;
   "crm.lead_activities": CrmLeadActivities;
   "crm.lead_vehicle_links": CrmLeadVehicleLinks;
+  "crm.seller_lead_estimated_costs": CrmSellerLeadEstimatedCosts;
   "crm.seller_leads": CrmSellerLeads;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
