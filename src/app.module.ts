@@ -12,6 +12,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { ActivityHistoryModule } from './modules/activity-history/activity-history.module';
+import { LeadPipelineModule } from './modules/lead-pipeline/lead-pipeline.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ActivityHistoryModule } from './modules/activity-history/activity-histo
     ReportsModule,
     UploadsModule,
     ActivityHistoryModule,
+    LeadPipelineModule,
   ],
   controllers: [AppController],
   providers: [AppService],

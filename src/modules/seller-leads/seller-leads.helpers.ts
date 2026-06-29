@@ -8,6 +8,7 @@ import type {
   SellerLeadStatus,
   VehicleTrackedCostCategory,
 } from '../../database/schema';
+import type { LeadPipelineState } from '../lead-pipeline/lead-pipeline.types';
 import { centsToMoney, parseMoneyToCents } from '../sales/sales.helpers';
 
 const SELLER_LEAD_STATUSES: SellerLeadStatus[] = [
@@ -327,6 +328,7 @@ export function mapSellerLeadResponse(lead: {
   estimatedGrossProfit?: string | null;
   estimatedProfitMargin?: string | null;
   recommendedAction?: SellerLeadDecision | null;
+  pipeline?: LeadPipelineState | null;
 }) {
   return {
     id: lead.id,
@@ -362,6 +364,7 @@ export function mapSellerLeadResponse(lead: {
     estimatedGrossProfit: lead.estimatedGrossProfit ?? null,
     estimatedProfitMargin: lead.estimatedProfitMargin ?? null,
     recommendedAction: lead.recommendedAction ?? null,
+    pipeline: lead.pipeline ?? null,
     createdAt: lead.created_at,
     updatedAt: lead.updated_at,
   };

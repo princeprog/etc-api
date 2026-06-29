@@ -16,6 +16,8 @@ import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { LeadPipelineService } from '../lead-pipeline/lead-pipeline.service';
+import type { LeadPipelineState } from '../lead-pipeline/lead-pipeline.types';
 import {
   mapBuyerLeadResponse,
   parseBuyerLeadStatus,
@@ -30,6 +32,7 @@ export class BuyerLeadsService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly leadPipelineService: LeadPipelineService,
   ) {}
 
   async create(user: CurrentUser, createBuyerLeadDto: CreateBuyerLeadDto) {
@@ -101,23 +104,41 @@ export class BuyerLeadsService {
       );
     }
 
-    const totalRow = await buyerLeadsQuery
-      .select(({ fn }) => fn.countAll<number>().as('count'))
-      .executeTakeFirstOrThrow();
-    const total = Number(totalRow.count);
+    let total = 0;
+    let buyerLeadItems: Awaited<ReturnType<BuyerLeadsService['mapBuyerLeadList']>> = [];
 
-    const leads = await buyerLeadsQuery
-      .selectAll()
-      .orderBy(sort.column, sort.direction)
-      .offset(pagination.offset)
-      .limit(pagination.pageSize)
-      .execute();
+    if (query.pipelineState) {
+      const allLeads = await buyerLeadsQuery
+        .selectAll()
+        .orderBy(sort.column, sort.direction)
+        .execute();
+      const allMappedLeads = await this.mapBuyerLeadList(allLeads);
+      const filteredLeads = this.filterBuyerLeadsByPipelineState(
+        allMappedLeads,
+        query.pipelineState,
+      );
+      total = filteredLeads.length;
+      buyerLeadItems = filteredLeads.slice(
+        pagination.offset,
+        pagination.offset + pagination.pageSize,
+      );
+    } else {
+      const totalRow = await buyerLeadsQuery
+        .select(({ fn }) => fn.countAll<number>().as('count'))
+        .executeTakeFirstOrThrow();
+      total = Number(totalRow.count);
 
-    const response = buildPaginatedResponse(
-      await this.mapBuyerLeadList(leads),
-      pagination,
-      total,
-    );
+      const leads = await buyerLeadsQuery
+        .selectAll()
+        .orderBy(sort.column, sort.direction)
+        .offset(pagination.offset)
+        .limit(pagination.pageSize)
+        .execute();
+
+      buyerLeadItems = await this.mapBuyerLeadList(leads);
+    }
+
+    const response = buildPaginatedResponse(buyerLeadItems, pagination, total);
 
     return {
       buyerLeads: response.items,
@@ -445,12 +466,33 @@ export class BuyerLeadsService {
 
   private async getBuyerLeadOrThrow(id: string) {
     const lead = await this.getLeadRecordOrThrow(id);
-    const vehicles = await this.getVehicleSummariesForBuyerLeadIds([id]);
+    const [vehicles, pipelineContext] = await Promise.all([
+      this.getVehicleSummariesForBuyerLeadIds([id]),
+      this.leadPipelineService.getBuyerLeadPipelineContext([id]),
+    ]);
+    const pipelineByLeadId = await this.leadPipelineService.buildBuyerLeadPipelines([
+      {
+        id: lead.id,
+        status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
+        contactNumber: lead.contact_number,
+        email: lead.email,
+        facebookName: lead.facebook_name,
+        assigneeUserId: lead.assignee_user_id,
+        closingNote: lead.closing_note,
+        latestActivityAt: lead.latest_activity_at,
+        createdAt: lead.created_at,
+        updatedAt: lead.updated_at,
+        vehicles: pipelineContext.get(lead.id)?.vehicles ?? [],
+        followUps: pipelineContext.get(lead.id)?.followUps ?? [],
+        sales: pipelineContext.get(lead.id)?.sales ?? [],
+      },
+    ]);
 
     return mapBuyerLeadResponse({
       ...lead,
       status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
       vehicles: vehicles.get(id) ?? [],
+      pipeline: pipelineByLeadId.get(id),
     });
   }
 
@@ -496,13 +538,35 @@ export class BuyerLeadsService {
       updated_at: Date
     }>,
   ) {
-    const vehicleMap = await this.getVehicleSummariesForBuyerLeadIds(leads.map((lead) => lead.id));
+    const leadIds = leads.map((lead) => lead.id);
+    const [vehicleMap, pipelineContext] = await Promise.all([
+      this.getVehicleSummariesForBuyerLeadIds(leadIds),
+      this.leadPipelineService.getBuyerLeadPipelineContext(leadIds),
+    ]);
+    const pipelineByLeadId = await this.leadPipelineService.buildBuyerLeadPipelines(
+      leads.map((lead) => ({
+        id: lead.id,
+        status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
+        contactNumber: lead.contact_number,
+        email: lead.email,
+        facebookName: lead.facebook_name,
+        assigneeUserId: lead.assignee_user_id,
+        closingNote: lead.closing_note,
+        latestActivityAt: lead.latest_activity_at,
+        createdAt: lead.created_at,
+        updatedAt: lead.updated_at,
+        vehicles: pipelineContext.get(lead.id)?.vehicles ?? [],
+        followUps: pipelineContext.get(lead.id)?.followUps ?? [],
+        sales: pipelineContext.get(lead.id)?.sales ?? [],
+      })),
+    );
 
     return leads.map((lead) =>
       mapBuyerLeadResponse({
         ...lead,
         status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
         vehicles: vehicleMap.get(lead.id) ?? [],
+        pipeline: pipelineByLeadId.get(lead.id),
       }),
     );
   }
@@ -592,6 +656,35 @@ export class BuyerLeadsService {
     }
 
     return value.toLowerCase() === 'true';
+  }
+
+  private filterBuyerLeadsByPipelineState(
+    leads: Awaited<ReturnType<BuyerLeadsService['mapBuyerLeadList']>>,
+    pipelineState: string,
+  ) {
+    switch (pipelineState) {
+      case 'blocked':
+        return leads.filter((lead) => (lead.pipeline?.blockers.length ?? 0) > 0);
+      case 'stale':
+        return leads.filter((lead) => lead.pipeline?.isStale);
+      case 'ready':
+      case 'ready_to_progress':
+        return leads.filter((lead) => this.isReadyToProgress(lead.pipeline));
+      default:
+        throw new BadRequestException(
+          `Unsupported buyer lead pipelineState: ${pipelineState}`,
+        );
+    }
+  }
+
+  private isReadyToProgress(pipeline?: LeadPipelineState | null) {
+    return Boolean(
+      pipeline &&
+        !pipeline.isStale &&
+        pipeline.blockers.filter((blocker) => blocker.severity === 'critical').length === 0 &&
+        pipeline.nextAction &&
+        pipeline.nextAction.code !== 'review_stale_lead',
+    );
   }
 }
 
