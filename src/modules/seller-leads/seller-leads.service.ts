@@ -969,9 +969,10 @@ export class SellerLeadsService {
     return Boolean(
       pipeline &&
         !pipeline.isStale &&
-        pipeline.blockers.filter((blocker) => blocker.severity === 'critical').length === 0 &&
         pipeline.nextAction &&
-        !['review_stale_seller_lead'].includes(pipeline.nextAction.code),
+        !['review_stale_seller_lead'].includes(pipeline.nextAction.code) &&
+        pipeline.stage !== 'acquired_vehicle_created' &&
+        pipeline.stage !== 'rejected_closed',
     );
   }
 }
