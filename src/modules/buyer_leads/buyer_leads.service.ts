@@ -681,9 +681,10 @@ export class BuyerLeadsService {
     return Boolean(
       pipeline &&
         !pipeline.isStale &&
-        pipeline.blockers.filter((blocker) => blocker.severity === 'critical').length === 0 &&
         pipeline.nextAction &&
-        pipeline.nextAction.code !== 'review_stale_lead',
+        pipeline.nextAction.code !== 'review_stale_lead' &&
+        pipeline.stage !== 'won_sale_finalized' &&
+        pipeline.stage !== 'lost_closed',
     );
   }
 }

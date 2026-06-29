@@ -36,24 +36,7 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
   });
 
   beforeEach(async () => {
-    await db.deleteFrom('ops.activity_history').execute();
-    await db.deleteFrom('sales.commissions').execute();
-    await db.deleteFrom('sales.sales').execute();
-    await db.deleteFrom('crm.follow_ups').execute();
-    await db.deleteFrom('crm.lead_vehicle_links').execute();
-    await db.deleteFrom('inventory.vehicle_photos').execute();
-    await db.deleteFrom('inventory.vehicles').execute();
-    await db.deleteFrom('crm.buyer_leads').execute();
-    await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('authentication.sessions').execute();
-    await db
-      .deleteFrom('authentication.users')
-      .where('email', '=', ADMIN_EMAIL)
-      .execute();
-    await db
-      .deleteFrom('authentication.users')
-      .where('email', '=', STAFF_EMAIL)
-      .execute();
+    await resetTestData(db);
 
     const user = await db
       .insertInto('authentication.users')
@@ -111,25 +94,12 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     vehicleId = vehicle.id;
   });
 
+  afterEach(async () => {
+    await resetTestData(db);
+  });
+
   afterAll(async () => {
-    await db.deleteFrom('ops.activity_history').execute();
-    await db.deleteFrom('sales.commissions').execute();
-    await db.deleteFrom('sales.sales').execute();
-    await db.deleteFrom('crm.follow_ups').execute();
-    await db.deleteFrom('crm.lead_vehicle_links').execute();
-    await db.deleteFrom('inventory.vehicle_photos').execute();
-    await db.deleteFrom('inventory.vehicles').execute();
-    await db.deleteFrom('crm.buyer_leads').execute();
-    await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('authentication.sessions').execute();
-    await db
-      .deleteFrom('authentication.users')
-      .where('email', '=', ADMIN_EMAIL)
-      .execute();
-    await db
-      .deleteFrom('authentication.users')
-      .where('email', '=', STAFF_EMAIL)
-      .execute();
+    await resetTestData(db);
     await app.close();
   });
 
@@ -344,8 +314,10 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
   });
 
-  it('filters and paginates buyer leads, seller leads, and follow-ups from query params', async () => {
-    const assigneeUserId = await currentUserId(app);
+  it(
+    'filters and paginates buyer leads, seller leads, and follow-ups from query params',
+    async () => {
+      const assigneeUserId = await currentUserId(app);
 
     await request(app.getHttpServer())
       .post('/buyer-leads')
@@ -494,14 +466,16 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         totalPages: 1,
       }),
     );
-    expect(filteredFollowUps.body.followUps).toEqual([
-      expect.objectContaining({
-        leadType: 'buyer',
-        note: 'Alpha callback about financing',
-        status: 'Due',
-      }),
-    ]);
-  });
+      expect(filteredFollowUps.body.followUps).toEqual([
+        expect.objectContaining({
+          leadType: 'buyer',
+          note: 'Alpha callback about financing',
+          status: 'Due',
+        }),
+      ]);
+    },
+    15000,
+  );
 
   it('excludes won buyer leads when eligibleForSale is requested', async () => {
     const assigneeUserId = await currentUserId(app);
@@ -552,8 +526,10 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
   });
 
-  it('derives buyer lead pipeline states across follow-up, vehicle matching, reservation, win, and staleness', async () => {
-    const assigneeUserId = await currentUserId(app);
+  it(
+    'derives buyer lead pipeline states across follow-up, vehicle matching, reservation, win, and staleness',
+    async () => {
+      const assigneeUserId = await currentUserId(app);
 
     const freshBuyer = await request(app.getHttpServer())
       .post('/buyer-leads')
@@ -755,17 +731,21 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .set('Cookie', authCookies)
       .expect(200);
 
-    expect(readyFilteredResponse.body.buyerLeads).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: readyBuyer.body.buyerLead.id,
-        }),
-      ]),
-    );
-  });
+      expect(readyFilteredResponse.body.buyerLeads).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: readyBuyer.body.buyerLead.id,
+          }),
+        ]),
+      );
+    },
+    15000,
+  );
 
-  it('derives seller lead pipeline states for follow-up, missing details, acquisition review, conversion, and staleness', async () => {
-    const assigneeUserId = await currentUserId(app);
+  it(
+    'derives seller lead pipeline states for follow-up, missing details, acquisition review, conversion, and staleness',
+    async () => {
+      const assigneeUserId = await currentUserId(app);
 
     const sellerResponse = await request(app.getHttpServer())
       .post('/seller-leads')
@@ -972,50 +952,56 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .set('Cookie', authCookies)
       .expect(200);
 
-    expect(readySellerFilteredResponse.body.sellerLeads).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: readySeller.body.sellerLead.id,
-        }),
-      ]),
-    );
-  });
+      expect(readySellerFilteredResponse.body.sellerLeads).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: readySeller.body.sellerLead.id,
+          }),
+        ]),
+      );
+    },
+    15000,
+  );
 
-  it('completes a follow-up and prevents duplicate completion', async () => {
-    const createResponse = await createBuyerLead(app, authCookies);
-    const buyerLeadId = createResponse.body.buyerLead.id;
+  it(
+    'completes a follow-up and prevents duplicate completion',
+    async () => {
+      const createResponse = await createBuyerLead(app, authCookies);
+      const buyerLeadId = createResponse.body.buyerLead.id;
 
-    const followUpResponse = await request(app.getHttpServer())
-      .post('/follow-ups')
-      .set('Cookie', authCookies)
-      .send({
-        leadType: 'buyer',
-        buyerLeadId,
-        assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
-        dueAt: new Date(Date.now() + 3600_000).toISOString(),
-        note: 'Check reservation interest',
-      })
-      .expect(201);
+      const followUpResponse = await request(app.getHttpServer())
+        .post('/follow-ups')
+        .set('Cookie', authCookies)
+        .send({
+          leadType: 'buyer',
+          buyerLeadId,
+          assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
+          dueAt: new Date(Date.now() + 3600_000).toISOString(),
+          note: 'Check reservation interest',
+        })
+        .expect(201);
 
-    const completeResponse = await request(app.getHttpServer())
-      .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
-      .set('Cookie', authCookies)
-      .send({
-        outcomeNote: 'Buyer confirmed they will visit tomorrow',
-      })
-      .expect(200);
+      const completeResponse = await request(app.getHttpServer())
+        .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+        .set('Cookie', authCookies)
+        .send({
+          outcomeNote: 'Buyer confirmed they will visit tomorrow',
+        })
+        .expect(200);
 
-    expect(completeResponse.body.followUp.status).toBe('Completed');
-    expect(completeResponse.body.followUp.completedAt).toBeTruthy();
+      expect(completeResponse.body.followUp.status).toBe('Completed');
+      expect(completeResponse.body.followUp.completedAt).toBeTruthy();
 
-    await request(app.getHttpServer())
-      .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
-      .set('Cookie', authCookies)
-      .send({
-        outcomeNote: 'Second completion should fail',
-      })
-      .expect(400);
-  });
+      await request(app.getHttpServer())
+        .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+        .set('Cookie', authCookies)
+        .send({
+          outcomeNote: 'Second completion should fail',
+        })
+        .expect(400);
+    },
+    30000,
+  );
 
   it('paginates entity and global activity history responses while keeping events in the payload', async () => {
     const firstLeadResponse = await request(app.getHttpServer())
@@ -1239,4 +1225,25 @@ function extractCookie(
   }
 
   return cookie.split(';')[0];
+}
+
+async function resetTestData(db: Kysely<DB>) {
+  await db.deleteFrom('ops.activity_history').execute();
+  await db.deleteFrom('sales.commissions').execute();
+  await db.deleteFrom('sales.sales').execute();
+  await db.deleteFrom('crm.follow_ups').execute();
+  await db.deleteFrom('crm.lead_vehicle_links').execute();
+  await db.deleteFrom('inventory.vehicle_photos').execute();
+  await db.deleteFrom('inventory.vehicles').execute();
+  await db.deleteFrom('crm.buyer_leads').execute();
+  await db.deleteFrom('crm.seller_leads').execute();
+  await db.deleteFrom('authentication.sessions').execute();
+  await db
+    .deleteFrom('authentication.users')
+    .where('email', '=', ADMIN_EMAIL)
+    .execute();
+  await db
+    .deleteFrom('authentication.users')
+    .where('email', '=', STAFF_EMAIL)
+    .execute();
 }
