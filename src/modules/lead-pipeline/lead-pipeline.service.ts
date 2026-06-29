@@ -374,6 +374,13 @@ export class LeadPipelineService {
         description: 'Match this buyer with an available vehicle before reserving.',
         target: 'vehicle_link',
       };
+    } else if (lead.status === 'Reserved') {
+      nextAction = {
+        code: 'finalize_sale',
+        label: 'Finalize sale',
+        description: 'Complete the sale workflow for this reserved buyer and vehicle.',
+        target: 'sale_finalization',
+      };
     } else if (!hasReservedVehicle) {
       nextAction = {
         code: 'review_linked_vehicle',
