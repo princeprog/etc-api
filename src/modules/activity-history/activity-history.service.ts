@@ -12,6 +12,7 @@ import {
   parsePageSize,
   parsePositiveInteger,
 } from '../../common/utils/list-query.utils';
+import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB, OpsActivityHistory } from '../../database/db';
 import type { ActivityEntityType } from '../../database/schema';
@@ -80,19 +81,19 @@ export class ActivityHistoryService {
   async listForEntity(
     entityType: ActivityEntityType,
     entityId: string,
+    currentUser: CurrentUser,
     query: ListActivityHistoryQueryDto = {},
   ) {
     const pagination = this.parseHistoryPagination(query, 50);
-
-    const totalRow = await this.db
-      .selectFrom('ops.activity_history')
-      .select(({ fn }) => fn.countAll<number>().as('count'))
+    const queryBuilder = this.buildVisibleEventsQuery(currentUser)
       .where('entity_type', '=', entityType)
-      .where('entity_id', '=', entityId)
+      .where('entity_id', '=', entityId);
+
+    const totalRow = await queryBuilder
+      .select(({ fn }) => fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
-    const events = await this.db
-      .selectFrom('ops.activity_history')
+    const events = await this.buildVisibleEventsQuery(currentUser)
       .selectAll()
       .where('entity_type', '=', entityType)
       .where('entity_id', '=', entityId)
@@ -116,16 +117,23 @@ export class ActivityHistoryService {
     };
   }
 
-  async listAll(query: ListActivityHistoryQueryDto = {}) {
+  async listAll(currentUser: CurrentUser, query: ListActivityHistoryQueryDto = {}) {
     const pagination = this.parseHistoryPagination(query, 100);
     const filters = this.normalizeFilters(query);
 
-    const totalRow = await this.createFilteredActivityQuery(filters)
+    const filteredQuery = this.applyFilters(
+      this.buildVisibleEventsQuery(currentUser) as ActivityHistoryQueryBuilder,
+      filters,
+    );
+
+    const totalRow = await filteredQuery
       .select(({ fn }) => fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
-
-    const events = await this.createFilteredActivityQuery(filters)
+    const events = await this.applyFilters(
+      this.buildVisibleEventsQuery(currentUser) as ActivityHistoryQueryBuilder,
+      filters,
+    )
       .selectAll()
       .orderBy('created_at', 'desc')
       .offset(pagination.offset)
@@ -147,7 +155,10 @@ export class ActivityHistoryService {
     };
   }
 
-  async getSummary(query: ListActivityHistoryQueryDto = {}) {
+  async getSummary(
+    currentUser: CurrentUser,
+    query: ListActivityHistoryQueryDto = {},
+  ) {
     const filters = this.normalizeFilters(query);
     const [
       totalActivities,
@@ -158,21 +169,21 @@ export class ActivityHistoryService {
       actors,
       actionTypes,
     ] = await Promise.all([
-      this.countFilteredActivities(filters),
-      this.countFilteredActivities(filters, (builder) =>
+      this.countFilteredActivities(currentUser, filters),
+      this.countFilteredActivities(currentUser, filters, (builder) =>
         this.applyTodayFilter(builder),
       ),
-      this.countFilteredActivities(filters, (builder) =>
+      this.countFilteredActivities(currentUser, filters, (builder) =>
         builder.where('entity_type', '=', 'vehicle'),
       ),
-      this.countFilteredActivities(filters, (builder) =>
+      this.countFilteredActivities(currentUser, filters, (builder) =>
         builder.where('entity_type', '=', 'sale'),
       ),
-      this.countFilteredActivities(filters, (builder) =>
+      this.countFilteredActivities(currentUser, filters, (builder) =>
         builder.where('entity_type', '=', 'user'),
       ),
-      this.listActorOptions(),
-      this.listActionTypeOptions(),
+      this.listActorOptions(currentUser, filters),
+      this.listActionTypeOptions(currentUser, filters),
     ]);
 
     return {
@@ -186,9 +197,12 @@ export class ActivityHistoryService {
     };
   }
 
-  async exportLogs(query: ListActivityHistoryQueryDto = {}) {
+  async exportLogs(currentUser: CurrentUser, query: ListActivityHistoryQueryDto = {}) {
     const filters = this.normalizeFilters(query);
-    const events = await this.createFilteredActivityQuery(filters)
+    const events = await this.applyFilters(
+      this.buildVisibleEventsQuery(currentUser) as ActivityHistoryQueryBuilder,
+      filters,
+    )
       .selectAll()
       .orderBy('created_at', 'desc')
       .execute();
@@ -220,6 +234,23 @@ export class ActivityHistoryService {
       filename: buildExportFilename('activity-history', 'logs'),
       csv,
     };
+  }
+
+  private buildVisibleEventsQuery(currentUser: CurrentUser) {
+    let query = this.db.selectFrom('ops.activity_history');
+
+    if (currentUser.role === 'staff') {
+      query = query.where(({ not, and, eb }) =>
+        not(
+          and([
+            eb('entity_type', '=', 'user'),
+            eb('action_type', '=', 'user.status_changed'),
+          ]),
+        ),
+      );
+    }
+
+    return query;
   }
 
   private parseHistoryPagination(
@@ -330,12 +361,16 @@ export class ActivityHistoryService {
   }
 
   private async countFilteredActivities(
+    currentUser: CurrentUser,
     filters: ActivityHistoryFilters,
     decorate?: (
       builder: ActivityHistoryQueryBuilder,
     ) => ActivityHistoryQueryBuilder,
   ) {
-    const baseQuery = this.createFilteredActivityQuery(filters);
+    const baseQuery = this.applyFilters(
+      this.buildVisibleEventsQuery(currentUser) as ActivityHistoryQueryBuilder,
+      filters,
+    );
     const query = decorate ? decorate(baseQuery) : baseQuery;
     const row = await query
       .select(({ fn }) => fn.countAll<number>().as('count'))
@@ -344,9 +379,14 @@ export class ActivityHistoryService {
     return Number(row.count);
   }
 
-  private async listActorOptions() {
-    const rows = await this.db
-      .selectFrom('ops.activity_history')
+  private async listActorOptions(
+    currentUser: CurrentUser,
+    filters: ActivityHistoryFilters,
+  ) {
+    const rows = await this.applyFilters(
+      this.buildVisibleEventsQuery(currentUser) as ActivityHistoryQueryBuilder,
+      filters,
+    )
       .select(sql<string>`coalesce(actor_display_name, 'System')`.as('name'))
       .groupBy(sql`coalesce(actor_display_name, 'System')`)
       .orderBy('name')
@@ -358,9 +398,14 @@ export class ActivityHistoryService {
     }));
   }
 
-  private async listActionTypeOptions() {
-    const rows = await this.db
-      .selectFrom('ops.activity_history')
+  private async listActionTypeOptions(
+    currentUser: CurrentUser,
+    filters: ActivityHistoryFilters,
+  ) {
+    const rows = await this.applyFilters(
+      this.buildVisibleEventsQuery(currentUser) as ActivityHistoryQueryBuilder,
+      filters,
+    )
       .select('action_type as value')
       .groupBy('action_type')
       .orderBy('action_type')

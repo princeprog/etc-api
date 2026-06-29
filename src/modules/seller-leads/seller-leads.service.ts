@@ -16,6 +16,8 @@ import {
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { LeadPipelineService } from '../lead-pipeline/lead-pipeline.service';
+import type { LeadPipelineState } from '../lead-pipeline/lead-pipeline.types';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import {
   mapVehicleResponse,
@@ -46,6 +48,7 @@ export class SellerLeadsService {
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly vehiclesService: VehiclesService,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly leadPipelineService: LeadPipelineService,
   ) {}
 
   async create(user: CurrentUser, createSellerLeadDto: CreateSellerLeadDto) {
@@ -155,24 +158,46 @@ export class SellerLeadsService {
       );
     }
 
-    const totalRow = await sellerLeadsQuery
-      .select(({ fn }) => fn.countAll<number>().as('count'))
-      .executeTakeFirstOrThrow();
-    const total = Number(totalRow.count);
+    let total = 0;
+    let sellerLeadItems: Awaited<ReturnType<SellerLeadsService['buildSellerLeadResponses']>> = [];
 
-    const sellerLeads = await sellerLeadsQuery
-      .selectAll()
-      .orderBy(sort.column, sort.direction)
-      .offset(pagination.offset)
-      .limit(pagination.pageSize)
-      .execute();
+    if (query.pipelineState) {
+      const allSellerLeads = await sellerLeadsQuery
+        .selectAll()
+        .orderBy(sort.column, sort.direction)
+        .execute();
+      const allMappedLeads = await this.buildSellerLeadResponses(
+        allSellerLeads.map((lead) => this.normalizeSellerLeadRecord(lead)),
+      );
+      const filteredLeads = this.filterSellerLeadsByPipelineState(
+        allMappedLeads,
+        query.pipelineState,
+      );
+      total = filteredLeads.length;
+      sellerLeadItems = filteredLeads.slice(
+        pagination.offset,
+        pagination.offset + pagination.pageSize,
+      );
+    } else {
+      const totalRow = await sellerLeadsQuery
+        .select(({ fn }) => fn.countAll<number>().as('count'))
+        .executeTakeFirstOrThrow();
+      total = Number(totalRow.count);
+
+      const sellerLeads = await sellerLeadsQuery
+        .selectAll()
+        .orderBy(sort.column, sort.direction)
+        .offset(pagination.offset)
+        .limit(pagination.pageSize)
+        .execute();
+
+      sellerLeadItems = await this.buildSellerLeadResponses(
+        sellerLeads.map((lead) => this.normalizeSellerLeadRecord(lead)),
+      );
+    }
 
     const response = buildPaginatedResponse(
-      await Promise.all(
-        sellerLeads.map((lead) =>
-          this.buildSellerLeadResponse(this.normalizeSellerLeadRecord(lead)),
-        ),
-      ),
+      sellerLeadItems,
       pagination,
       total,
     );
@@ -581,11 +606,166 @@ export class SellerLeadsService {
       estimatedCosts,
     });
 
+    const pipelineContext = await this.getSellerLeadPipelineContext(
+      [sellerLead.id],
+      executor,
+    );
+    const pipelineByLeadId = await this.leadPipelineService.buildSellerLeadPipelines([
+      {
+        id: sellerLead.id,
+        status: sellerLead.status,
+        contactNumber: sellerLead.contact_number,
+        email: sellerLead.email,
+        facebookName: sellerLead.facebook_name,
+        vehicleBrand: sellerLead.vehicle_brand,
+        vehicleModel: sellerLead.vehicle_model,
+        vehicleYear: sellerLead.vehicle_year,
+        askingPrice: sellerLead.asking_price,
+        targetBuyPrice: sellerLead.target_buy_price,
+        expectedResalePrice: sellerLead.expected_resale_price,
+        assigneeUserId: sellerLead.assignee_user_id,
+        latestActivityAt: sellerLead.latest_activity_at,
+        createdAt: sellerLead.created_at,
+        updatedAt: sellerLead.updated_at,
+        followUps: pipelineContext.get(sellerLead.id)?.followUps ?? [],
+        vehicleId: pipelineContext.get(sellerLead.id)?.vehicleId ?? null,
+      },
+    ]);
+
     return mapSellerLeadResponse({
       ...sellerLead,
       estimatedCosts: estimatedCosts.map(mapSellerLeadEstimatedCostResponse),
       ...summary,
+      pipeline: pipelineByLeadId.get(sellerLead.id) ?? null,
     });
+  }
+
+  private async buildSellerLeadResponses(
+    sellerLeads: Array<Awaited<ReturnType<typeof this.getLeadRecordOrThrow>>>,
+  ) {
+    const leadIds = sellerLeads.map((lead) => lead.id);
+    const [pipelineContext, estimatedCostRows] = await Promise.all([
+      this.getSellerLeadPipelineContext(leadIds),
+      this.db
+        .selectFrom('crm.seller_lead_estimated_costs')
+        .selectAll()
+        .where('seller_lead_id', 'in', leadIds)
+        .orderBy('created_at', 'asc')
+        .execute(),
+    ]);
+
+    const estimatedCostsByLeadId = new Map<string, typeof estimatedCostRows>();
+    for (const leadId of leadIds) {
+      estimatedCostsByLeadId.set(leadId, []);
+    }
+    for (const row of estimatedCostRows) {
+      estimatedCostsByLeadId.get(row.seller_lead_id)?.push(row);
+    }
+
+    const pipelineByLeadId = await this.leadPipelineService.buildSellerLeadPipelines(
+      sellerLeads.map((lead) => ({
+        id: lead.id,
+        status: lead.status,
+        contactNumber: lead.contact_number,
+        email: lead.email,
+        facebookName: lead.facebook_name,
+        vehicleBrand: lead.vehicle_brand,
+        vehicleModel: lead.vehicle_model,
+        vehicleYear: lead.vehicle_year,
+        askingPrice: lead.asking_price,
+        targetBuyPrice: lead.target_buy_price,
+        expectedResalePrice: lead.expected_resale_price,
+        assigneeUserId: lead.assignee_user_id,
+        latestActivityAt: lead.latest_activity_at,
+        createdAt: lead.created_at,
+        updatedAt: lead.updated_at,
+        followUps: pipelineContext.get(lead.id)?.followUps ?? [],
+        vehicleId: pipelineContext.get(lead.id)?.vehicleId ?? null,
+      })),
+    );
+
+    return sellerLeads.map((lead) => {
+      const estimatedCosts = estimatedCostsByLeadId.get(lead.id) ?? [];
+      const summary = calculateSellerLeadEvaluationSummary({
+        askingPrice: lead.asking_price,
+        targetBuyPrice: lead.target_buy_price,
+        expectedResalePrice: lead.expected_resale_price,
+        targetProfitAmount: lead.target_profit_amount,
+        estimatedCosts,
+      });
+
+      return mapSellerLeadResponse({
+        ...lead,
+        estimatedCosts: estimatedCosts.map(mapSellerLeadEstimatedCostResponse),
+        ...summary,
+        pipeline: pipelineByLeadId.get(lead.id) ?? null,
+      });
+    });
+  }
+
+  private async getSellerLeadPipelineContext(
+    sellerLeadIds: string[],
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
+    if (!executor) {
+      return this.leadPipelineService.getSellerLeadPipelineContext(sellerLeadIds);
+    }
+
+    const byLeadId = new Map<
+      string,
+      {
+        followUps: Array<{ dueAt: Date; completedAt: Date | null }>;
+        vehicleId: string | null;
+      }
+    >();
+
+    if (sellerLeadIds.length === 0) {
+      return byLeadId;
+    }
+
+    const [followUpRows, vehicleRows] = await Promise.all([
+      executor
+        .selectFrom('crm.follow_ups')
+        .select([
+          'seller_lead_id as sellerLeadId',
+          'due_at as dueAt',
+          'completed_at as completedAt',
+        ])
+        .where('seller_lead_id', 'in', sellerLeadIds)
+        .orderBy('due_at', 'desc')
+        .execute(),
+      executor
+        .selectFrom('inventory.vehicles')
+        .select(['seller_lead_id as sellerLeadId', 'id'])
+        .where('seller_lead_id', 'in', sellerLeadIds)
+        .execute(),
+    ]);
+
+    for (const id of sellerLeadIds) {
+      byLeadId.set(id, { followUps: [], vehicleId: null });
+    }
+
+    for (const row of followUpRows) {
+      if (!row.sellerLeadId) {
+        continue;
+      }
+      byLeadId.get(row.sellerLeadId)?.followUps.push({
+        dueAt: row.dueAt,
+        completedAt: row.completedAt,
+      });
+    }
+
+    for (const row of vehicleRows) {
+      if (!row.sellerLeadId) {
+        continue;
+      }
+      const current = byLeadId.get(row.sellerLeadId);
+      if (current && current.vehicleId === null) {
+        current.vehicleId = row.id;
+      }
+    }
+
+    return byLeadId;
   }
 
   private async writeUpdateActivity(
@@ -764,5 +944,34 @@ export class SellerLeadsService {
     }
 
     throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
+  }
+
+  private filterSellerLeadsByPipelineState(
+    leads: Awaited<ReturnType<SellerLeadsService['buildSellerLeadResponses']>>,
+    pipelineState: string,
+  ) {
+    switch (pipelineState) {
+      case 'blocked':
+        return leads.filter((lead) => (lead.pipeline?.blockers.length ?? 0) > 0);
+      case 'stale':
+        return leads.filter((lead) => lead.pipeline?.isStale);
+      case 'ready':
+      case 'ready_to_progress':
+        return leads.filter((lead) => this.isReadyToProgress(lead.pipeline));
+      default:
+        throw new BadRequestException(
+          `Unsupported seller lead pipelineState: ${pipelineState}`,
+        );
+    }
+  }
+
+  private isReadyToProgress(pipeline?: LeadPipelineState | null) {
+    return Boolean(
+      pipeline &&
+        !pipeline.isStale &&
+        pipeline.blockers.filter((blocker) => blocker.severity === 'critical').length === 0 &&
+        pipeline.nextAction &&
+        !['review_stale_seller_lead'].includes(pipeline.nextAction.code),
+    );
   }
 }

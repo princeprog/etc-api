@@ -13,6 +13,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { ActivityHistoryModule } from './modules/activity-history/activity-history.module';
 import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.module';
+import { LeadPipelineModule } from './modules/lead-pipeline/lead-pipeline.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.
     UploadsModule,
     ActivityHistoryModule,
     VehicleCatalogModule,
+    LeadPipelineModule,
   ],
   controllers: [AppController],
   providers: [AppService],
