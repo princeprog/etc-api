@@ -644,6 +644,11 @@ export class SellerLeadsService {
     sellerLeads: Array<Awaited<ReturnType<typeof this.getLeadRecordOrThrow>>>,
   ) {
     const leadIds = sellerLeads.map((lead) => lead.id);
+
+    if (leadIds.length === 0) {
+      return [];
+    }
+
     const [pipelineContext, estimatedCostRows] = await Promise.all([
       this.getSellerLeadPipelineContext(leadIds),
       this.db
