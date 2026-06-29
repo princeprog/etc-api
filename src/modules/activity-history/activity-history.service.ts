@@ -9,6 +9,7 @@ import {
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { ActivityEntityType } from '../../database/schema';
+import type { CurrentUser } from '../../common/types/auth.types';
 import type { ListActivityHistoryQueryDto } from './dto/list-activity-history-query.dto';
 import { mapActivityHistoryResponse } from './activity-history.helpers';
 import type { WriteActivityHistoryInput } from './activity-history.types';
@@ -37,19 +38,19 @@ export class ActivityHistoryService {
   async listForEntity(
     entityType: ActivityEntityType,
     entityId: string,
+    currentUser: CurrentUser,
     query: ListActivityHistoryQueryDto = {},
   ) {
     const pagination = this.parseHistoryPagination(query, 50);
-
-    const totalRow = await this.db
-      .selectFrom('ops.activity_history')
-      .select(({ fn }) => fn.countAll<number>().as('count'))
+    const queryBuilder = this.buildVisibleEventsQuery(currentUser)
       .where('entity_type', '=', entityType)
-      .where('entity_id', '=', entityId)
+      .where('entity_id', '=', entityId);
+
+    const totalRow = await queryBuilder
+      .select(({ fn }) => fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
-    const events = await this.db
-      .selectFrom('ops.activity_history')
+    const events = await this.buildVisibleEventsQuery(currentUser)
       .selectAll()
       .where('entity_type', '=', entityType)
       .where('entity_id', '=', entityId)
@@ -73,16 +74,14 @@ export class ActivityHistoryService {
     };
   }
 
-  async listAll(query: ListActivityHistoryQueryDto = {}) {
+  async listAll(currentUser: CurrentUser, query: ListActivityHistoryQueryDto = {}) {
     const pagination = this.parseHistoryPagination(query, 100);
 
-    const totalRow = await this.db
-      .selectFrom('ops.activity_history')
+    const totalRow = await this.buildVisibleEventsQuery(currentUser)
       .select(({ fn }) => fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
-    const events = await this.db
-      .selectFrom('ops.activity_history')
+    const events = await this.buildVisibleEventsQuery(currentUser)
       .selectAll()
       .orderBy('created_at', 'desc')
       .offset(pagination.offset)
@@ -102,6 +101,23 @@ export class ActivityHistoryService {
       total: response.total,
       totalPages: response.totalPages,
     };
+  }
+
+  private buildVisibleEventsQuery(currentUser: CurrentUser) {
+    let query = this.db.selectFrom('ops.activity_history');
+
+    if (currentUser.role === 'staff') {
+      query = query.where(({ not, and, eb }) =>
+        not(
+          and([
+            eb('entity_type', '=', 'user'),
+            eb('action_type', '=', 'user.status_changed'),
+          ]),
+        ),
+      );
+    }
+
+    return query;
   }
 
   private parseHistoryPagination(
