@@ -4,6 +4,7 @@ import type {
   VehicleStatus,
   VehicleTrackedCostCategory,
 } from '../../database/schema';
+import { evaluateVehicleQuality } from './vehicle-quality.helpers';
 import type {
   VehiclePhotoInput,
   VehicleResponse,
@@ -175,6 +176,30 @@ export function mapVehicleResponse(vehicle: {
   trackedCosts: VehicleTrackedCostResponse[];
   trackedCostsTotal: string;
 }): VehicleResponse {
+  const qualityScore = evaluateVehicleQuality({
+    id: vehicle.id,
+    stockNumber: vehicle.stock_number,
+    brand: vehicle.brand,
+    model: vehicle.model,
+    year: vehicle.year,
+    variant: vehicle.variant,
+    mileage: vehicle.mileage,
+    transmission: vehicle.transmission,
+    fuelType: vehicle.fuel_type,
+    color: vehicle.color,
+    region: vehicle.region,
+    features: vehicle.features,
+    purchasePrice: vehicle.purchase_price,
+    targetSellingPrice: vehicle.target_selling_price,
+    minimumAcceptablePrice: vehicle.minimum_acceptable_price,
+    acquisitionSource: vehicle.acquisition_source,
+    sellerLeadId: vehicle.seller_lead_id,
+    status: vehicle.status,
+    photos: vehicle.photos,
+    trackedCosts: vehicle.trackedCosts,
+    createdAt: vehicle.created_at,
+  });
+
   return {
     id: vehicle.id,
     stockNumber: vehicle.stock_number,
@@ -198,6 +223,7 @@ export function mapVehicleResponse(vehicle: {
     photos: vehicle.photos,
     trackedCosts: vehicle.trackedCosts,
     trackedCostsTotal: vehicle.trackedCostsTotal,
+    qualityScore,
     createdAt: vehicle.created_at,
     updatedAt: vehicle.updated_at,
   };
