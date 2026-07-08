@@ -4,17 +4,43 @@ import { Kysely } from 'kysely';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { centsToMoney } from '../sales/sales.helpers';
+import { evaluateVehicleQuality } from '../vehicles/vehicle-quality.helpers';
+import type {
+  VehicleQualityGrade,
+  VehicleQualityIssue,
+  VehicleQualityIssueSeverity,
+} from '../vehicles/vehicle-quality.types';
+import {
+  parseVehicleStatus,
+  parseVehicleTrackedCostCategory,
+} from '../vehicles/vehicles.helpers';
+import type {
+  VehiclePhotoInput,
+  VehicleTrackedCostResponse,
+} from '../vehicles/vehicles.types';
+
+const DASHBOARD_ISSUE_LABEL_OVERRIDES: Record<string, string> = {
+  'freshness.stale_warning': 'Stale inventory (60+ days)',
+  'freshness.stale_critical': 'Stale inventory (90+ days)',
+};
+
+const SEVERITY_RANK: Record<VehicleQualityIssueSeverity, number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
 
 @Injectable()
 export class DashboardService {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
 
   async getDashboard() {
-    const [availableVehicles, reservedVehicles, soldVehicles] =
+    const [availableVehicles, reservedVehicles, soldVehicles, inventoryQuality] =
       await Promise.all([
         this.countVehiclesByStatus('Available'),
         this.countVehiclesByStatus('Reserved'),
         this.countVehiclesByStatus('Sold'),
+        this.getInventoryQualitySummary(),
       ]);
 
     const now = new Date();
@@ -87,6 +113,7 @@ export class DashboardService {
         monthlySales: monthlySales.length,
         monthlyRevenue: centsToMoney(monthlyRevenueCents),
         monthlyProfit: centsToMoney(monthlyProfitCents),
+        inventoryQuality,
       },
       queues: {
         overdueFollowUps: overdueFollowUps.map((followUp) => ({
@@ -125,6 +152,141 @@ export class DashboardService {
           createdAt: lead.created_at,
         })),
       },
+    };
+  }
+
+  private async getInventoryQualitySummary() {
+    const [vehicles, photos, costs] = await Promise.all([
+      this.db
+        .selectFrom('inventory.vehicles')
+        .selectAll()
+        .where('status', '!=', 'Sold')
+        .execute(),
+      this.db
+        .selectFrom('inventory.vehicle_photos')
+        .select(['vehicle_id', 'file_url', 'sort_order'])
+        .orderBy('sort_order', 'asc')
+        .execute(),
+      this.db
+        .selectFrom('inventory.vehicle_tracked_costs')
+        .selectAll()
+        .execute(),
+    ]);
+
+    const photosByVehicle = new Map<string, VehiclePhotoInput[]>();
+    for (const photo of photos) {
+      const list = photosByVehicle.get(photo.vehicle_id) ?? [];
+      list.push({ fileUrl: photo.file_url, sortOrder: photo.sort_order });
+      photosByVehicle.set(photo.vehicle_id, list);
+    }
+
+    const costsByVehicle = new Map<string, VehicleTrackedCostResponse[]>();
+    for (const cost of costs) {
+      const list = costsByVehicle.get(cost.vehicle_id) ?? [];
+      list.push({
+        id: cost.id,
+        category: parseVehicleTrackedCostCategory(cost.category),
+        amount: cost.amount,
+        note: cost.note,
+        createdAt: cost.created_at,
+        updatedAt: cost.updated_at,
+      });
+      costsByVehicle.set(cost.vehicle_id, list);
+    }
+
+    const evaluatedAt = new Date();
+    const results = vehicles.map((vehicle) =>
+      evaluateVehicleQuality(
+        {
+          id: vehicle.id,
+          stockNumber: vehicle.stock_number,
+          brand: vehicle.brand,
+          model: vehicle.model,
+          year: vehicle.year,
+          variant: vehicle.variant,
+          mileage: vehicle.mileage,
+          transmission: vehicle.transmission,
+          fuelType: vehicle.fuel_type,
+          color: vehicle.color,
+          region: vehicle.region,
+          features: vehicle.features,
+          purchasePrice: vehicle.purchase_price,
+          targetSellingPrice: vehicle.target_selling_price,
+          minimumAcceptablePrice: vehicle.minimum_acceptable_price,
+          acquisitionSource: vehicle.acquisition_source,
+          sellerLeadId: vehicle.seller_lead_id,
+          status: parseVehicleStatus(vehicle.status, 'Incoming'),
+          photos: photosByVehicle.get(vehicle.id) ?? [],
+          trackedCosts: costsByVehicle.get(vehicle.id) ?? [],
+          createdAt: vehicle.created_at,
+        },
+        evaluatedAt,
+      ),
+    );
+
+    const totalActiveVehicles = results.length;
+    const averageScore =
+      totalActiveVehicles === 0
+        ? 0
+        : Math.round(
+            results.reduce((sum, result) => sum + result.score, 0) /
+              totalActiveVehicles,
+          );
+
+    const gradeCounts: Record<VehicleQualityGrade, number> = {
+      excellent: 0,
+      good: 0,
+      needs_attention: 0,
+      incomplete: 0,
+    };
+    for (const result of results) {
+      gradeCounts[result.grade] += 1;
+    }
+
+    const issueAggregates = new Map<
+      string,
+      {
+        code: string;
+        label: string;
+        severity: VehicleQualityIssueSeverity;
+        count: number;
+      }
+    >();
+    for (const result of results) {
+      const allIssues: VehicleQualityIssue[] = [
+        ...result.blockingIssues,
+        ...result.warnings,
+        ...result.suggestions,
+      ];
+      for (const issue of allIssues) {
+        const existing = issueAggregates.get(issue.code);
+        if (existing) {
+          existing.count += 1;
+          continue;
+        }
+        issueAggregates.set(issue.code, {
+          code: issue.code,
+          label: DASHBOARD_ISSUE_LABEL_OVERRIDES[issue.code] ?? issue.label,
+          severity: issue.severity,
+          count: 1,
+        });
+      }
+    }
+
+    const topIssues = Array.from(issueAggregates.values())
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
+      )
+      .slice(0, 3);
+
+    return {
+      averageScore,
+      totalActiveVehicles,
+      gradeCounts,
+      topIssues,
+      lastEvaluatedAt: evaluatedAt.toISOString(),
     };
   }
 

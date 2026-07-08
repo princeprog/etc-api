@@ -3,6 +3,7 @@ import type {
   VehicleStatus,
   VehicleTrackedCostCategory,
 } from '../../database/schema';
+import type { VehicleQualityScore } from './vehicle-quality.types';
 
 export type VehiclePhotoInput = {
   fileUrl: string;
@@ -63,6 +64,7 @@ export type VehicleResponse = {
   photos: VehiclePhotoInput[];
   trackedCosts: VehicleTrackedCostResponse[];
   trackedCostsTotal: string;
+  qualityScore: VehicleQualityScore;
   createdAt: Date;
   updatedAt: Date;
 };
