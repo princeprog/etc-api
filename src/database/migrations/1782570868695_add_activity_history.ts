@@ -7,7 +7,10 @@ export async function up(db: Kysely<any>): Promise<void> {
     .createTable('ops.activity_history')
     .addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`gen_random_uuid()`))
     .addColumn('actor_user_id', 'uuid', (col) =>
-      col.references('auth.users.id').onDelete('set null').onUpdate('cascade'),
+      col
+        .references('authentication.users.id')
+        .onDelete('set null')
+        .onUpdate('cascade'),
     )
     .addColumn('actor_display_name', 'varchar(255)')
     .addColumn('entity_type', 'varchar(32)', (col) => col.notNull())
