@@ -7,6 +7,10 @@ import {
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
+import {
+  buildPaginatedResponse,
+  parsePagination,
+} from '../../common/utils/list-query.utils';
 import type { CurrentUser } from '../../common/types/auth.types';
 import { LocalFileStorageService } from '../../common/storage/local-file-storage.service';
 import { DATABASE } from '../../database/database.constants';
@@ -15,6 +19,7 @@ import type { VehicleStatus } from '../../database/schema';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import type { ActivityHistoryMetadata } from '../activity-history/activity-history.types';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
+import { ListVehicleTrackedCostsQueryDto } from './dto/list-vehicle-tracked-costs-query.dto';
 import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import {
@@ -30,6 +35,7 @@ import {
 import type {
   VehiclePhotoInput,
   VehicleTrackedCostResponse,
+  VehicleTrackedCostsPageResponse,
   VehicleWriteModel,
 } from './vehicles.types';
 import { centsToMoney, parseMoneyToCents } from '../sales/sales.helpers';
@@ -137,6 +143,44 @@ export class VehiclesService {
   async findOne(id: string) {
     const vehicle = await this.getVehicleOrThrow(id);
     return { vehicle };
+  }
+
+  async listTrackedCosts(
+    vehicleId: string,
+    query: ListVehicleTrackedCostsQueryDto = {},
+  ): Promise<VehicleTrackedCostsPageResponse> {
+    await this.ensureVehicleExists(vehicleId);
+
+    const pagination = parsePagination(query);
+    const baseQuery = this.db
+      .selectFrom('inventory.vehicle_tracked_costs')
+      .where('vehicle_id', '=', vehicleId);
+
+    const totalRow = await baseQuery
+      .select(({ fn }) => fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+    const total = Number(totalRow.count);
+
+    const trackedCosts = await baseQuery
+      .selectAll()
+      .orderBy('created_at', 'asc')
+      .offset(pagination.offset)
+      .limit(pagination.pageSize)
+      .execute();
+
+    const response = buildPaginatedResponse(
+      trackedCosts.map((cost) => this.mapVehicleTrackedCost(cost)),
+      pagination,
+      total,
+    );
+
+    return {
+      trackedCosts: response.items,
+      page: response.page,
+      pageSize: response.pageSize,
+      total: response.total,
+      totalPages: response.totalPages,
+    };
   }
 
   async update(user: CurrentUser, id: string, updateVehicleDto: UpdateVehicleDto) {
@@ -425,6 +469,18 @@ export class VehiclesService {
     }));
   }
 
+  private async ensureVehicleExists(id: string) {
+    const vehicle = await this.db
+      .selectFrom('inventory.vehicles')
+      .select(['id'])
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    if (!vehicle) {
+      throw new NotFoundException(`Vehicle ${id} was not found`);
+    }
+  }
+
   private async getVehicleTrackedCosts(
     id: string,
     executor?: Kysely<DB> | Transaction<DB>,
@@ -437,14 +493,25 @@ export class VehiclesService {
       .orderBy('created_at', 'asc')
       .execute();
 
-    return trackedCosts.map<VehicleTrackedCostResponse>((cost) => ({
+    return trackedCosts.map((cost) => this.mapVehicleTrackedCost(cost));
+  }
+
+  private mapVehicleTrackedCost(cost: {
+    id: string;
+    category: string;
+    amount: string;
+    note: string;
+    created_at: Date;
+    updated_at: Date;
+  }): VehicleTrackedCostResponse {
+    return {
       id: cost.id,
       category: parseVehicleTrackedCostCategory(cost.category),
       amount: cost.amount,
       note: cost.note,
       createdAt: cost.created_at,
       updatedAt: cost.updated_at,
-    }));
+    };
   }
 
   private sumTrackedCosts(trackedCosts: VehicleTrackedCostResponse[]) {

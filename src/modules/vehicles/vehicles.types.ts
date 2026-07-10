@@ -19,6 +19,14 @@ export type VehicleTrackedCostResponse = {
   updatedAt: Date;
 };
 
+export type VehicleTrackedCostsPageResponse = {
+  trackedCosts: VehicleTrackedCostResponse[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 export type VehicleWriteModel = {
   stockNumber: string;
   brand: string;

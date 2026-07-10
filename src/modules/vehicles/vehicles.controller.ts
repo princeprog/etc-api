@@ -14,6 +14,7 @@ import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUser as AuthUser } from '../../common/types/auth.types';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
+import { ListVehicleTrackedCostsQueryDto } from './dto/list-vehicle-tracked-costs-query.dto';
 import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { UpdateVehicleTrackedCostDto } from './dto/update-vehicle-tracked-cost.dto';
@@ -55,6 +56,14 @@ export class VehiclesController {
     @Body() dto: VehicleTrackedCostDto,
   ) {
     return this.vehiclesService.createTrackedCost(id, dto);
+  }
+
+  @Get(':id/tracked-costs')
+  listTrackedCosts(
+    @Param('id') id: string,
+    @Query() query: ListVehicleTrackedCostsQueryDto,
+  ) {
+    return this.vehiclesService.listTrackedCosts(id, query);
   }
 
   @Patch(':id/tracked-costs/:costId')
