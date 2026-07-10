@@ -17,7 +17,6 @@ import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import { LeadPipelineService } from '../lead-pipeline/lead-pipeline.service';
-import type { LeadPipelineState } from '../lead-pipeline/lead-pipeline.types';
 import {
   mapBuyerLeadResponse,
   parseBuyerLeadStatus,
@@ -113,7 +112,8 @@ export class BuyerLeadsService {
         .orderBy(sort.column, sort.direction)
         .execute();
       const allMappedLeads = await this.mapBuyerLeadList(allLeads);
-      const filteredLeads = this.filterBuyerLeadsByPipelineState(
+      const filteredLeads = this.leadPipelineService.filterByPipelineState(
+        'buyer',
         allMappedLeads,
         query.pipelineState,
       );
@@ -658,35 +658,6 @@ export class BuyerLeadsService {
     return value.toLowerCase() === 'true';
   }
 
-  private filterBuyerLeadsByPipelineState(
-    leads: Awaited<ReturnType<BuyerLeadsService['mapBuyerLeadList']>>,
-    pipelineState: string,
-  ) {
-    switch (pipelineState) {
-      case 'blocked':
-        return leads.filter((lead) => (lead.pipeline?.blockers.length ?? 0) > 0);
-      case 'stale':
-        return leads.filter((lead) => lead.pipeline?.isStale);
-      case 'ready':
-      case 'ready_to_progress':
-        return leads.filter((lead) => this.isReadyToProgress(lead.pipeline));
-      default:
-        throw new BadRequestException(
-          `Unsupported buyer lead pipelineState: ${pipelineState}`,
-        );
-    }
-  }
-
-  private isReadyToProgress(pipeline?: LeadPipelineState | null) {
-    return Boolean(
-      pipeline &&
-        !pipeline.isStale &&
-        pipeline.nextAction &&
-        pipeline.nextAction.code !== 'review_stale_lead' &&
-        pipeline.stage !== 'won_sale_finalized' &&
-        pipeline.stage !== 'lost_closed',
-    );
-  }
 }
 
 type BuyerLeadVehicleSummary = {
