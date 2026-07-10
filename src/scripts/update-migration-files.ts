@@ -39,7 +39,7 @@ async function repairMigrations(): Promise<void> {
 
     // Connect to DB
     const pgConfig: ClientConfig = { connectionString };
-    pgConfig.ssl = process.env.DB_SSL === 'true';
+    pgConfig.ssl = parseSslConfig();
 
     
     client = new Client(pgConfig);
@@ -110,6 +110,16 @@ async function repairMigrations(): Promise<void> {
       await client.end();
     }
   }
+}
+
+function parseSslConfig() {
+  if (process.env.DB_SSL !== 'true') {
+    return false;
+  }
+
+  return {
+    rejectUnauthorized: false,
+  };
 }
 
 repairMigrations();
