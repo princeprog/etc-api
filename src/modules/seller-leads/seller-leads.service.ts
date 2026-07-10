@@ -17,7 +17,6 @@ import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import { LeadPipelineService } from '../lead-pipeline/lead-pipeline.service';
-import type { LeadPipelineState } from '../lead-pipeline/lead-pipeline.types';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import {
   mapVehicleResponse,
@@ -169,7 +168,8 @@ export class SellerLeadsService {
       const allMappedLeads = await this.buildSellerLeadResponses(
         allSellerLeads.map((lead) => this.normalizeSellerLeadRecord(lead)),
       );
-      const filteredLeads = this.filterSellerLeadsByPipelineState(
+      const filteredLeads = this.leadPipelineService.filterByPipelineState(
+        'seller',
         allMappedLeads,
         query.pipelineState,
       );
@@ -951,33 +951,4 @@ export class SellerLeadsService {
     throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
   }
 
-  private filterSellerLeadsByPipelineState(
-    leads: Awaited<ReturnType<SellerLeadsService['buildSellerLeadResponses']>>,
-    pipelineState: string,
-  ) {
-    switch (pipelineState) {
-      case 'blocked':
-        return leads.filter((lead) => (lead.pipeline?.blockers.length ?? 0) > 0);
-      case 'stale':
-        return leads.filter((lead) => lead.pipeline?.isStale);
-      case 'ready':
-      case 'ready_to_progress':
-        return leads.filter((lead) => this.isReadyToProgress(lead.pipeline));
-      default:
-        throw new BadRequestException(
-          `Unsupported seller lead pipelineState: ${pipelineState}`,
-        );
-    }
-  }
-
-  private isReadyToProgress(pipeline?: LeadPipelineState | null) {
-    return Boolean(
-      pipeline &&
-        !pipeline.isStale &&
-        pipeline.nextAction &&
-        !['review_stale_seller_lead'].includes(pipeline.nextAction.code) &&
-        pipeline.stage !== 'acquired_vehicle_created' &&
-        pipeline.stage !== 'rejected_closed',
-    );
-  }
 }
