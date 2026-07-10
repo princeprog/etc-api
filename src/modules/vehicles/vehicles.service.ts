@@ -183,7 +183,11 @@ export class VehiclesService {
     };
   }
 
-  async update(user: CurrentUser, id: string, updateVehicleDto: UpdateVehicleDto) {
+  async update(
+    user: CurrentUser,
+    id: string,
+    updateVehicleDto: UpdateVehicleDto,
+  ) {
     const existingVehicle = await this.db
       .selectFrom('inventory.vehicles')
       .selectAll()
@@ -226,6 +230,7 @@ export class VehiclesService {
         updateVehicleDto.status ??
         parseVehicleStatus(existingVehicle.status, 'Incoming'),
       photos: updateVehicleDto.photos ?? existingPhotos,
+      validateAvailableReadiness: updateVehicleDto.status !== undefined,
     });
     const removedPhotoPaths = this.getRemovedPhotoPaths(
       existingPhotos,
@@ -357,6 +362,7 @@ export class VehiclesService {
     sellerLeadId?: string | null;
     status?: VehicleStatus;
     photos?: VehiclePhotoInput[];
+    validateAvailableReadiness?: boolean;
   }): VehicleWriteModel {
     const stockNumber = input.stockNumber?.trim();
     const brand = input.brand?.trim();
@@ -396,7 +402,9 @@ export class VehiclesService {
       photos: normalizeVehiclePhotos(input.photos),
     };
 
-    validateVehicleAvailability(normalized);
+    validateVehicleAvailability(normalized, {
+      requireAvailableReadiness: input.validateAvailableReadiness,
+    });
     return normalized;
   }
 
@@ -615,9 +623,15 @@ export class VehiclesService {
         summary: 'Vehicle pricing updated',
         metadata: {
           changedFields: [
-            previous.purchase_price !== next.purchasePrice ? 'purchasePrice' : null,
-            previous.target_selling_price !== next.targetSellingPrice ? 'targetSellingPrice' : null,
-            previous.minimum_acceptable_price !== next.minimumAcceptablePrice ? 'minimumAcceptablePrice' : null,
+            previous.purchase_price !== next.purchasePrice
+              ? 'purchasePrice'
+              : null,
+            previous.target_selling_price !== next.targetSellingPrice
+              ? 'targetSellingPrice'
+              : null,
+            previous.minimum_acceptable_price !== next.minimumAcceptablePrice
+              ? 'minimumAcceptablePrice'
+              : null,
           ].filter(Boolean),
         },
       });

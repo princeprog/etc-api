@@ -120,14 +120,20 @@ export function normalizeTrackedCostNote(
   return trimmed;
 }
 
-export function validateVehicleAvailability(model: VehicleWriteModel): void {
+export function validateVehicleAvailability(
+  model: VehicleWriteModel,
+  options: { requireAvailableReadiness?: boolean } = {},
+): void {
   if (model.status === 'Sold') {
     throw new BadRequestException(
       'Vehicles can only move to Sold through the sales finalization workflow',
     );
   }
 
-  if (model.status !== 'Available') {
+  if (
+    model.status !== 'Available' ||
+    options.requireAvailableReadiness === false
+  ) {
     return;
   }
 
