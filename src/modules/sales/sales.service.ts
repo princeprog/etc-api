@@ -4,12 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Kysely, SelectQueryBuilder, Transaction } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 
 import type { CurrentUser } from '../../common/types/auth.types';
 import {
   buildPaginatedResponse,
-  normalizeSearch,
   parsePagination,
 } from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
@@ -20,6 +19,15 @@ import { CreateSaleDraftDto } from './dto/create-sale-draft.dto';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import { UpdateSaleDraftDto } from './dto/update-sale-draft.dto';
+import {
+  applyDraftListFilters,
+  applySalesListFilters,
+  compareSalesListRecords,
+  normalizeSalesListFilters,
+  shouldIncludeDrafts,
+  shouldIncludeSales,
+  type SaleListRecord,
+} from './sales-list-filters';
 import {
   calculateProfitAfterTrackedCosts,
   centsToMoney,
@@ -46,12 +54,6 @@ type FinalizeSaleInput = {
   buyerClosingNote?: string | null;
 };
 
-type SaleListRecord = {
-  id: string;
-  recordType: 'sale' | 'draft';
-  sortDate: Date;
-};
-
 @Injectable()
 export class SalesService {
   constructor(
@@ -65,9 +67,13 @@ export class SalesService {
   }
 
   async saveDraft(user: CurrentUser, dto: CreateSaleDraftDto) {
-    const values = await this.normalizeDraftValues(user, dto);
+    const values = this.normalizeDraftValues(user, dto);
     const draft = await this.db.transaction().execute(async (trx) => {
-      await this.validateDraftBuyerVehicle(values.buyerLeadId, values.vehicleId, trx);
+      await this.validateDraftBuyerVehicle(
+        values.buyerLeadId,
+        values.vehicleId,
+        trx,
+      );
 
       const existingDraft = await trx
         .selectFrom('sales.sale_drafts')
@@ -107,7 +113,7 @@ export class SalesService {
 
   async updateDraft(user: CurrentUser, id: string, dto: UpdateSaleDraftDto) {
     const existingDraft = await this.getDraftModelOrThrow(id);
-    const values = await this.normalizeDraftValues(user, {
+    const values = this.normalizeDraftValues(user, {
       vehicleId: dto.vehicleId ?? existingDraft.vehicle_id,
       buyerLeadId: dto.buyerLeadId ?? existingDraft.buyer_lead_id,
       saleDate:
@@ -135,7 +141,11 @@ export class SalesService {
     });
 
     const updatedDraft = await this.db.transaction().execute(async (trx) => {
-      await this.validateDraftBuyerVehicle(values.buyerLeadId, values.vehicleId, trx);
+      await this.validateDraftBuyerVehicle(
+        values.buyerLeadId,
+        values.vehicleId,
+        trx,
+      );
 
       return trx
         .updateTable('sales.sale_drafts')
@@ -236,8 +246,9 @@ export class SalesService {
   }
 
   async getSummary(query: ListSalesQueryDto = {}) {
+    const filters = normalizeSalesListFilters(query);
     const finalizedQuery =
-      query.status === 'draft'
+      filters.status === 'draft'
         ? this.buildFilteredSalesQuery({ ...query, status: 'none' })
         : this.buildFilteredSalesQuery(query);
     const summary = await finalizedQuery
@@ -748,7 +759,9 @@ export class SalesService {
       const vehicle = vehicleById.get(draft.vehicle_id);
 
       if (!vehicle) {
-        throw new NotFoundException(`Vehicle ${draft.vehicle_id} was not found`);
+        throw new NotFoundException(
+          `Vehicle ${draft.vehicle_id} was not found`,
+        );
       }
 
       const buyerLead = buyerLeadById.get(draft.buyer_lead_id);
@@ -820,10 +833,7 @@ export class SalesService {
     return commission.override_amount ? 'commission_locked' : 'finalized';
   }
 
-  private async normalizeDraftValues(
-    user: CurrentUser,
-    dto: CreateSaleDraftDto,
-  ) {
+  private normalizeDraftValues(user: CurrentUser, dto: CreateSaleDraftDto) {
     const vehicleId = requireTrimmed(dto.vehicleId, 'vehicleId');
     const buyerLeadId = requireTrimmed(dto.buyerLeadId, 'buyerLeadId');
     const saleDate = dto.saleDate?.trim()
@@ -916,15 +926,17 @@ export class SalesService {
   }
 
   private async getSalesListRecords(query: ListSalesQueryDto = {}) {
-    const includeDrafts = !query.status || query.status === 'all' || query.status === 'draft';
-    const includeSales = query.status !== 'draft';
+    const filters = normalizeSalesListFilters(query);
     const records: SaleListRecord[] = [];
 
-    if (includeSales) {
+    if (shouldIncludeSales(filters)) {
       const sales = await this.buildFilteredSalesQuery(query)
         .select([
           'sales.sales.id as id',
+          'sales.sales.sale_number as saleNumber',
+          'sales.sales.agent_name as agentName',
           'sales.sales.sale_date as saleDate',
+          'sales.sales.final_sale_amount as finalSaleAmount',
           'sales.sales.created_at as createdAt',
         ])
         .execute();
@@ -933,16 +945,23 @@ export class SalesService {
         ...sales.map((sale) => ({
           id: sale.id,
           recordType: 'sale' as const,
+          recordNumber: sale.saleNumber,
+          agentName: sale.agentName,
+          finalSaleAmount: sale.finalSaleAmount,
           sortDate: sale.saleDate ?? sale.createdAt,
+          createdAt: sale.createdAt,
         })),
       );
     }
 
-    if (includeDrafts) {
+    if (shouldIncludeDrafts(filters)) {
       const drafts = await this.buildFilteredDraftsQuery(query)
         .select([
           'sales.sale_drafts.id as id',
+          'sales.sale_drafts.draft_number as draftNumber',
+          'sales.sale_drafts.agent_name as agentName',
           'sales.sale_drafts.sale_date as saleDate',
+          'sales.sale_drafts.final_sale_amount as finalSaleAmount',
           'sales.sale_drafts.updated_at as updatedAt',
           'sales.sale_drafts.created_at as createdAt',
         ])
@@ -952,32 +971,26 @@ export class SalesService {
         ...drafts.map((draft) => ({
           id: draft.id,
           recordType: 'draft' as const,
+          recordNumber: draft.draftNumber,
+          agentName: draft.agentName,
+          finalSaleAmount: draft.finalSaleAmount,
           sortDate: draft.saleDate ?? draft.updatedAt ?? draft.createdAt,
+          createdAt: draft.createdAt,
         })),
       );
     }
 
-    records.sort((left, right) => this.compareListRecords(left, right, query));
+    records.sort((left, right) =>
+      compareSalesListRecords(left, right, filters),
+    );
 
     return records;
   }
 
-  private compareListRecords(
-    left: SaleListRecord,
-    right: SaleListRecord,
-    query: ListSalesQueryDto,
-  ) {
-    const direction = this.parseSortOrder(query.sortOrder);
-    const multiplier = direction === 'asc' ? 1 : -1;
-
-    return (
-      (left.sortDate.getTime() - right.sortDate.getTime()) * multiplier ||
-      left.id.localeCompare(right.id) * multiplier
-    );
-  }
-
   private async countDrafts(query: ListSalesQueryDto = {}) {
-    if (query.status && query.status !== 'all' && query.status !== 'draft') {
+    const filters = normalizeSalesListFilters(query);
+
+    if (!shouldIncludeDrafts(filters)) {
       return 0;
     }
 
@@ -989,10 +1002,9 @@ export class SalesService {
   }
 
   private buildFilteredSalesQuery(query: ListSalesQueryDto = {}) {
-    const search = normalizeSearch(query.search);
-    const agentName = normalizeOptionalTrimmed(query.agentName);
+    const filters = normalizeSalesListFilters(query);
 
-    let salesQuery = this.db
+    const salesQuery = this.db
       .selectFrom('sales.sales')
       .innerJoin(
         'inventory.vehicles',
@@ -1010,56 +1022,13 @@ export class SalesService {
         'sales.sales.id',
       );
 
-    if (search) {
-      const pattern = `%${search.toLowerCase()}%`;
-      salesQuery = salesQuery.where(({ eb, or }) =>
-        or([
-          eb(sql<string>`lower(sales.sales.sale_number)`, 'like', pattern),
-          eb(sql<string>`lower(sales.sales.id::text)`, 'like', pattern),
-          eb(
-            sql<string>`lower(inventory.vehicles.stock_number)`,
-            'like',
-            pattern,
-          ),
-          eb(sql<string>`lower(inventory.vehicles.brand)`, 'like', pattern),
-          eb(sql<string>`lower(inventory.vehicles.model)`, 'like', pattern),
-          eb(
-            sql<string>`lower(coalesce(sales.sales.agent_name, ''))`,
-            'like',
-            pattern,
-          ),
-          eb(sql<string>`lower(crm.buyer_leads.buyer_name)`, 'like', pattern),
-          eb(
-            sql<string>`lower(crm.buyer_leads.contact_number)`,
-            'like',
-            pattern,
-          ),
-        ]),
-      );
-    }
-
-    if (agentName) {
-      salesQuery = salesQuery.where(
-        sql<boolean>`lower(coalesce(sales.sales.agent_name, '')) = lower(${agentName})`,
-      );
-    }
-
-    if (query.status) {
-      salesQuery = this.applyStatusFilter(salesQuery, query.status);
-    }
-
-    if (query.dateRange) {
-      salesQuery = this.applyDateRangeFilter(salesQuery, query.dateRange);
-    }
-
-    return salesQuery;
+    return applySalesListFilters(salesQuery, filters);
   }
 
   private buildFilteredDraftsQuery(query: ListSalesQueryDto = {}) {
-    const search = normalizeSearch(query.search);
-    const agentName = normalizeOptionalTrimmed(query.agentName);
+    const filters = normalizeSalesListFilters(query);
 
-    let draftsQuery = this.db
+    const draftsQuery = this.db
       .selectFrom('sales.sale_drafts')
       .innerJoin(
         'inventory.vehicles',
@@ -1072,52 +1041,7 @@ export class SalesService {
         'sales.sale_drafts.buyer_lead_id',
       );
 
-    if (search) {
-      const pattern = `%${search.toLowerCase()}%`;
-      draftsQuery = draftsQuery.where(({ eb, or }) =>
-        or([
-          eb(
-            sql<string>`lower(sales.sale_drafts.draft_number)`,
-            'like',
-            pattern,
-          ),
-          eb(sql<string>`lower(sales.sale_drafts.id::text)`, 'like', pattern),
-          eb(
-            sql<string>`lower(inventory.vehicles.stock_number)`,
-            'like',
-            pattern,
-          ),
-          eb(sql<string>`lower(inventory.vehicles.brand)`, 'like', pattern),
-          eb(sql<string>`lower(inventory.vehicles.model)`, 'like', pattern),
-          eb(
-            sql<string>`lower(coalesce(sales.sale_drafts.agent_name, ''))`,
-            'like',
-            pattern,
-          ),
-          eb(sql<string>`lower(crm.buyer_leads.buyer_name)`, 'like', pattern),
-          eb(
-            sql<string>`lower(crm.buyer_leads.contact_number)`,
-            'like',
-            pattern,
-          ),
-        ]),
-      );
-    }
-
-    if (agentName) {
-      draftsQuery = draftsQuery.where(
-        sql<boolean>`lower(coalesce(sales.sale_drafts.agent_name, '')) = lower(${agentName})`,
-      );
-    }
-
-    if (query.dateRange) {
-      draftsQuery = this.applyDraftDateRangeFilter(
-        draftsQuery,
-        query.dateRange,
-      );
-    }
-
-    return draftsQuery;
+    return applyDraftListFilters(draftsQuery, filters);
   }
 
   private async allocateSaleNumber(trx: Transaction<DB>, saleDate: Date) {
@@ -1165,135 +1089,6 @@ export class SalesService {
     );
 
     return `D-${draftYear}-${String(latestSequence + 1).padStart(3, '0')}`;
-  }
-
-  private applyStatusFilter(
-    query: SelectQueryBuilder<
-      DB,
-      | 'sales.sales'
-      | 'inventory.vehicles'
-      | 'crm.buyer_leads'
-      | 'sales.commissions',
-      object
-    >,
-    status: string,
-  ) {
-    switch (status) {
-      case 'all':
-      case '':
-        return query;
-      case 'none':
-        return query.where(sql<boolean>`false`);
-      case 'finalized':
-        return query
-          .where('sales.sales.commission_locked', '=', true)
-          .where('sales.commissions.override_amount', 'is', null);
-      case 'commission_locked':
-        return query
-          .where('sales.sales.commission_locked', '=', true)
-          .where('sales.commissions.override_amount', 'is not', null);
-      case 'needs_review':
-        return query.where('sales.sales.commission_locked', '=', false);
-      default:
-        throw new BadRequestException(`Unsupported sales status: ${status}`);
-    }
-  }
-
-  private applyDraftDateRangeFilter(
-    query: SelectQueryBuilder<
-      DB,
-      'sales.sale_drafts' | 'inventory.vehicles' | 'crm.buyer_leads',
-      object
-    >,
-    dateRange: string,
-  ) {
-    const now = new Date();
-
-    switch (dateRange) {
-      case 'all':
-      case '':
-        return query;
-      case 'this_month':
-        return query.where(
-          sql<boolean>`date_trunc('month', sales.sale_drafts.sale_date) = date_trunc('month', ${now}::timestamptz)`,
-        );
-      case 'last_30_days':
-        return query.where(
-          'sales.sale_drafts.sale_date',
-          '>=',
-          new Date(now.getTime() - 30 * 86_400_000),
-        );
-      default:
-        throw new BadRequestException(
-          `Unsupported sales date range: ${dateRange}`,
-        );
-    }
-  }
-
-  private applyDateRangeFilter(
-    query: SelectQueryBuilder<
-      DB,
-      | 'sales.sales'
-      | 'inventory.vehicles'
-      | 'crm.buyer_leads'
-      | 'sales.commissions',
-      object
-    >,
-    dateRange: string,
-  ) {
-    const now = new Date();
-
-    switch (dateRange) {
-      case 'all':
-      case '':
-        return query;
-      case 'this_month':
-        return query.where(
-          sql<boolean>`date_trunc('month', sales.sales.sale_date) = date_trunc('month', ${now}::timestamptz)`,
-        );
-      case 'last_30_days':
-        return query.where(
-          'sales.sales.sale_date',
-          '>=',
-          new Date(now.getTime() - 30 * 86_400_000),
-        );
-      default:
-        throw new BadRequestException(
-          `Unsupported sales date range: ${dateRange}`,
-        );
-    }
-  }
-
-  private parseSort(sortBy?: string, sortOrder?: string) {
-    const direction = this.parseSortOrder(sortOrder);
-
-    switch (sortBy) {
-      case undefined:
-      case 'saleDate':
-        return { column: 'sales.sales.sale_date' as const, direction };
-      case 'createdAt':
-        return { column: 'sales.sales.created_at' as const, direction };
-      case 'finalSaleAmount':
-        return { column: 'sales.sales.final_sale_amount' as const, direction };
-      case 'saleNumber':
-        return { column: 'sales.sales.sale_number' as const, direction };
-      case 'agentName':
-        return { column: 'sales.sales.agent_name' as const, direction };
-      default:
-        throw new BadRequestException(`Unsupported sales sort: ${sortBy}`);
-    }
-  }
-
-  private parseSortOrder(sortOrder?: string): 'asc' | 'desc' {
-    if (!sortOrder || sortOrder === 'desc') {
-      return 'desc';
-    }
-
-    if (sortOrder === 'asc') {
-      return 'asc';
-    }
-
-    throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
   }
 
   private normalizeSummaryMoney(value: string) {
