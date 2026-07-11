@@ -64,6 +64,7 @@ export interface AuthCustomOauthProviders {
   client_id: string;
   client_secret: string;
   created_at: Generated<Timestamp>;
+  custom_claims_allowlist: Generated<string[]>;
   discovery_cached_at: Timestamp | null;
   discovery_url: string | null;
   email_optional: Generated<boolean>;
@@ -644,6 +645,22 @@ export interface SalesCommissions {
   updated_at: Generated<Timestamp>;
 }
 
+export interface SalesSaleDrafts {
+  agent_name: string | null;
+  buyer_closing_note: string | null;
+  buyer_lead_id: string;
+  commission_override_amount: Numeric | null;
+  commission_override_reason: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  draft_number: string;
+  final_sale_amount: Numeric | null;
+  id: Generated<string>;
+  sale_date: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  vehicle_id: string;
+}
+
 export interface SalesSales {
   agent_name: string | null;
   buyer_lead_id: string;
@@ -822,6 +839,7 @@ export interface DB {
   "realtime.schema_migrations": RealtimeSchemaMigrations;
   "realtime.subscription": RealtimeSubscription;
   "sales.commissions": SalesCommissions;
+  "sales.sale_drafts": SalesSaleDrafts;
   "sales.sales": SalesSales;
   "storage.buckets": StorageBuckets;
   "storage.buckets_analytics": StorageBucketsAnalytics;

@@ -235,6 +235,22 @@ export interface SalesTable {
   updated_at: Generated<Date>;
 }
 
+export interface SaleDraftsTable {
+  id: Generated<string>;
+  draft_number: string;
+  vehicle_id: string;
+  buyer_lead_id: string;
+  created_by_user_id: string;
+  agent_name: string | null;
+  sale_date: Date | null;
+  final_sale_amount: string | null;
+  commission_override_amount: string | null;
+  commission_override_reason: string | null;
+  buyer_closing_note: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface CommissionsTable {
   id: Generated<string>;
   sale_id: string;
@@ -271,6 +287,7 @@ export interface DB {
   'crm.lead_vehicle_links': LeadVehicleLinksTable;
   'crm.lead_activities': LeadActivitiesTable;
   'crm.follow_ups': FollowUpsTable;
+  'sales.sale_drafts': SaleDraftsTable;
   'sales.sales': SalesTable;
   'sales.commissions': CommissionsTable;
   'ops.activity_history': ActivityHistoryTable;
