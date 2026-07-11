@@ -69,7 +69,8 @@ export class SalesService {
   async saveDraft(user: CurrentUser, dto: CreateSaleDraftDto) {
     const values = this.normalizeDraftValues(user, dto);
     const draft = await this.db.transaction().execute(async (trx) => {
-      await this.validateDraftBuyerVehicle(
+      await this.ensureDraftBuyerVehicleLink(
+        user,
         values.buyerLeadId,
         values.vehicleId,
         trx,
@@ -141,7 +142,8 @@ export class SalesService {
     });
 
     const updatedDraft = await this.db.transaction().execute(async (trx) => {
-      await this.validateDraftBuyerVehicle(
+      await this.ensureDraftBuyerVehicleLink(
+        user,
         values.buyerLeadId,
         values.vehicleId,
         trx,
@@ -352,18 +354,7 @@ export class SalesService {
         );
       }
 
-      const link = await trx
-        .selectFrom('crm.lead_vehicle_links')
-        .select(['id'])
-        .where('buyer_lead_id', '=', buyerLeadId)
-        .where('vehicle_id', '=', vehicleId)
-        .executeTakeFirst();
-
-      if (!link) {
-        throw new BadRequestException(
-          'Buyer lead must be linked to the vehicle before finalizing a sale',
-        );
-      }
+      await this.ensureBuyerVehicleLink(user, buyerLead, vehicle, trx);
 
       const closingNote = buyerClosingNote ?? buyerLead.closing_note;
 
@@ -885,26 +876,91 @@ export class SalesService {
     };
   }
 
-  private async validateDraftBuyerVehicle(
+  private async ensureDraftBuyerVehicleLink(
+    user: CurrentUser,
     buyerLeadId: string,
     vehicleId: string,
     trx: Transaction<DB>,
   ) {
-    await this.getVehicleOrThrow(vehicleId, trx);
-    await this.getBuyerLeadOrThrow(buyerLeadId, trx);
+    const vehicle = await this.getVehicleOrThrow(vehicleId, trx);
+    const buyerLead = await this.getBuyerLeadOrThrow(buyerLeadId, trx);
 
-    const link = await trx
+    await this.ensureBuyerVehicleLink(user, buyerLead, vehicle, trx);
+  }
+
+  private async ensureBuyerVehicleLink(
+    user: CurrentUser,
+    buyerLead: {
+      id: string;
+      buyer_name: string;
+    },
+    vehicle: {
+      id: string;
+      stock_number: string;
+      brand: string;
+      model: string;
+    },
+    trx: Transaction<DB>,
+  ) {
+    const existingLink = await trx
       .selectFrom('crm.lead_vehicle_links')
       .select(['id'])
-      .where('buyer_lead_id', '=', buyerLeadId)
-      .where('vehicle_id', '=', vehicleId)
+      .where('buyer_lead_id', '=', buyerLead.id)
+      .where('vehicle_id', '=', vehicle.id)
       .executeTakeFirst();
 
-    if (!link) {
-      throw new BadRequestException(
-        'Buyer lead must be linked to the vehicle before saving a sale draft',
-      );
+    if (existingLink) {
+      return;
     }
+
+    const insertedLink = await trx
+      .insertInto('crm.lead_vehicle_links')
+      .values({
+        buyer_lead_id: buyerLead.id,
+        vehicle_id: vehicle.id,
+      })
+      .onConflict((oc) =>
+        oc.columns(['buyer_lead_id', 'vehicle_id']).doNothing(),
+      )
+      .returning(['id'])
+      .executeTakeFirst();
+
+    if (!insertedLink) {
+      return;
+    }
+
+    await this.activityHistoryService.write(
+      {
+        actor: user,
+        entityType: 'buyer_lead',
+        entityId: buyerLead.id,
+        actionType: 'buyer_lead.vehicle_linked',
+        summary: `Linked vehicle ${vehicle.stock_number} to buyer lead from Sales`,
+        metadata: {
+          vehicleId: vehicle.id,
+          vehicleStockNumber: vehicle.stock_number,
+          vehicleLabel: `${vehicle.brand} ${vehicle.model}`,
+          source: 'sales',
+        },
+      },
+      trx,
+    );
+
+    await this.activityHistoryService.write(
+      {
+        actor: user,
+        entityType: 'vehicle',
+        entityId: vehicle.id,
+        actionType: 'vehicle.linked_to_buyer_lead',
+        summary: 'Vehicle linked to buyer lead from Sales',
+        metadata: {
+          buyerLeadId: buyerLead.id,
+          buyerName: buyerLead.buyer_name,
+          source: 'sales',
+        },
+      },
+      trx,
+    );
   }
 
   private formatDateInput(date: Date | null) {
