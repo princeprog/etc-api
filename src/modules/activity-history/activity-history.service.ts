@@ -1,23 +1,66 @@
-import { Inject, Injectable } from '@nestjs/common';
-import type { Kysely, Transaction } from 'kysely';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  sql,
+  type Kysely,
+  type SelectQueryBuilder,
+  type Transaction,
+} from 'kysely';
 
 import {
   buildPaginatedResponse,
+  normalizeSearch,
   parsePageSize,
   parsePositiveInteger,
 } from '../../common/utils/list-query.utils';
 import { DATABASE } from '../../database/database.constants';
-import type { DB } from '../../database/db';
+import type { DB, OpsActivityHistory } from '../../database/db';
 import type { ActivityEntityType } from '../../database/schema';
+import { buildCsv, buildExportFilename } from '../reports/reports.helpers';
 import type { ListActivityHistoryQueryDto } from './dto/list-activity-history-query.dto';
 import { mapActivityHistoryResponse } from './activity-history.helpers';
 import type { WriteActivityHistoryInput } from './activity-history.types';
+
+const ACTIVITY_ENTITY_TYPES = [
+  'seller_lead',
+  'buyer_lead',
+  'vehicle',
+  'sale',
+  'follow_up',
+  'user',
+] as const satisfies ActivityEntityType[];
+
+const ACTIVITY_DATE_RANGES = [
+  'all',
+  'today',
+  'last_7_days',
+  'last_30_days',
+  'this_month',
+] as const;
+
+type ActivityDateRange = (typeof ACTIVITY_DATE_RANGES)[number];
+
+type ActivityHistoryFilters = {
+  search?: string;
+  entityType?: ActivityEntityType;
+  actionType?: string;
+  actor?: string;
+  dateRange: ActivityDateRange;
+};
+
+type ActivityHistoryQueryBuilder = SelectQueryBuilder<
+  DB,
+  'ops.activity_history',
+  OpsActivityHistory
+>;
 
 @Injectable()
 export class ActivityHistoryService {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
 
-  async write(input: WriteActivityHistoryInput, executor?: Kysely<DB> | Transaction<DB>) {
+  async write(
+    input: WriteActivityHistoryInput,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
     const db = executor ?? this.db;
     await db
       .insertInto('ops.activity_history')
@@ -75,14 +118,14 @@ export class ActivityHistoryService {
 
   async listAll(query: ListActivityHistoryQueryDto = {}) {
     const pagination = this.parseHistoryPagination(query, 100);
+    const filters = this.normalizeFilters(query);
 
-    const totalRow = await this.db
-      .selectFrom('ops.activity_history')
+    const totalRow = await this.createFilteredActivityQuery(filters)
       .select(({ fn }) => fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
     const total = Number(totalRow.count);
-    const events = await this.db
-      .selectFrom('ops.activity_history')
+
+    const events = await this.createFilteredActivityQuery(filters)
       .selectAll()
       .orderBy('created_at', 'desc')
       .offset(pagination.offset)
@@ -104,12 +147,86 @@ export class ActivityHistoryService {
     };
   }
 
+  async getSummary(query: ListActivityHistoryQueryDto = {}) {
+    const filters = this.normalizeFilters(query);
+    const [
+      totalActivities,
+      todaysEvents,
+      vehicleUpdates,
+      salesEvents,
+      userActions,
+      actors,
+      actionTypes,
+    ] = await Promise.all([
+      this.countFilteredActivities(filters),
+      this.countFilteredActivities(filters, (builder) =>
+        this.applyTodayFilter(builder),
+      ),
+      this.countFilteredActivities(filters, (builder) =>
+        builder.where('entity_type', '=', 'vehicle'),
+      ),
+      this.countFilteredActivities(filters, (builder) =>
+        builder.where('entity_type', '=', 'sale'),
+      ),
+      this.countFilteredActivities(filters, (builder) =>
+        builder.where('entity_type', '=', 'user'),
+      ),
+      this.listActorOptions(),
+      this.listActionTypeOptions(),
+    ]);
+
+    return {
+      totalActivities,
+      todaysEvents,
+      vehicleUpdates,
+      salesEvents,
+      userActions,
+      actors,
+      actionTypes,
+    };
+  }
+
+  async exportLogs(query: ListActivityHistoryQueryDto = {}) {
+    const filters = this.normalizeFilters(query);
+    const events = await this.createFilteredActivityQuery(filters)
+      .selectAll()
+      .orderBy('created_at', 'desc')
+      .execute();
+
+    const rows = events.map(mapActivityHistoryResponse);
+    const csv = buildCsv(
+      [
+        {
+          header: 'Time',
+          value: (row) => new Date(row.timestamp).toISOString(),
+        },
+        { header: 'Event', value: (row) => row.summary },
+        { header: 'Module', value: (row) => row.entityType },
+        { header: 'Action Type', value: (row) => row.actionType },
+        { header: 'User', value: (row) => row.actorDisplayName ?? 'System' },
+        { header: 'Entity ID', value: (row) => row.entityId },
+        {
+          header: 'Metadata',
+          value: (row) =>
+            Object.keys(row.metadata).length
+              ? JSON.stringify(row.metadata)
+              : '',
+        },
+      ],
+      rows,
+    );
+
+    return {
+      filename: buildExportFilename('activity-history', 'logs'),
+      csv,
+    };
+  }
+
   private parseHistoryPagination(
     query: ListActivityHistoryQueryDto,
     defaultPageSize: number,
   ) {
-    const resolvedPageSize =
-      query.pageSize ?? query.limit ?? defaultPageSize;
+    const resolvedPageSize = query.pageSize ?? query.limit ?? defaultPageSize;
 
     return {
       page: parsePositiveInteger(query.page, 'page', 1),
@@ -118,5 +235,186 @@ export class ActivityHistoryService {
         (parsePositiveInteger(query.page, 'page', 1) - 1) *
         parsePageSize(resolvedPageSize),
     };
+  }
+
+  private normalizeFilters(
+    query: ListActivityHistoryQueryDto,
+  ): ActivityHistoryFilters {
+    return {
+      search: normalizeSearch(query.search),
+      entityType: this.parseOptionalEntityType(query.entityType),
+      actionType: this.parseOptionalText(query.actionType),
+      actor: this.parseOptionalText(query.actor),
+      dateRange: this.parseDateRange(query.dateRange),
+    };
+  }
+
+  private createFilteredActivityQuery(filters: ActivityHistoryFilters) {
+    return this.applyFilters(
+      this.db.selectFrom('ops.activity_history') as ActivityHistoryQueryBuilder,
+      filters,
+    );
+  }
+
+  private applyFilters(
+    builder: ActivityHistoryQueryBuilder,
+    filters: ActivityHistoryFilters,
+  ) {
+    let query = builder;
+
+    if (filters.search) {
+      const pattern = `%${filters.search.toLowerCase()}%`;
+      query = query.where((eb) =>
+        eb.or([
+          eb(sql`lower(summary)`, 'like', pattern),
+          eb(sql`lower(entity_id)`, 'like', pattern),
+          eb(sql`lower(action_type)`, 'like', pattern),
+          eb(sql`lower(entity_type)`, 'like', pattern),
+          eb(
+            sql`lower(coalesce(actor_display_name, 'System'))`,
+            'like',
+            pattern,
+          ),
+        ]),
+      );
+    }
+
+    if (filters.entityType) {
+      query = query.where('entity_type', '=', filters.entityType);
+    }
+
+    if (filters.actionType) {
+      query = query.where('action_type', '=', filters.actionType);
+    }
+
+    if (filters.actor) {
+      query = query.where(
+        sql`lower(coalesce(actor_display_name, 'System'))`,
+        '=',
+        filters.actor.toLowerCase(),
+      );
+    }
+
+    return this.applyDateRangeFilter(query, filters.dateRange);
+  }
+
+  private applyDateRangeFilter(
+    builder: ActivityHistoryQueryBuilder,
+    dateRange: ActivityDateRange,
+  ) {
+    switch (dateRange) {
+      case 'today':
+        return this.applyTodayFilter(builder);
+      case 'last_7_days':
+        return builder.where('created_at', '>=', this.daysAgo(7));
+      case 'last_30_days':
+        return builder.where('created_at', '>=', this.daysAgo(30));
+      case 'this_month':
+        return builder.where(
+          'created_at',
+          '>=',
+          sql<Date>`date_trunc('month', now())`,
+        );
+      case 'all':
+      default:
+        return builder;
+    }
+  }
+
+  private applyTodayFilter(builder: ActivityHistoryQueryBuilder) {
+    return builder.where(
+      sql`date_trunc('day', created_at)`,
+      '=',
+      sql`date_trunc('day', now())`,
+    );
+  }
+
+  private async countFilteredActivities(
+    filters: ActivityHistoryFilters,
+    decorate?: (
+      builder: ActivityHistoryQueryBuilder,
+    ) => ActivityHistoryQueryBuilder,
+  ) {
+    const baseQuery = this.createFilteredActivityQuery(filters);
+    const query = decorate ? decorate(baseQuery) : baseQuery;
+    const row = await query
+      .select(({ fn }) => fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+
+    return Number(row.count);
+  }
+
+  private async listActorOptions() {
+    const rows = await this.db
+      .selectFrom('ops.activity_history')
+      .select(sql<string>`coalesce(actor_display_name, 'System')`.as('name'))
+      .groupBy(sql`coalesce(actor_display_name, 'System')`)
+      .orderBy('name')
+      .execute();
+
+    return rows.map((row) => ({
+      value: row.name,
+      label: row.name,
+    }));
+  }
+
+  private async listActionTypeOptions() {
+    const rows = await this.db
+      .selectFrom('ops.activity_history')
+      .select('action_type as value')
+      .groupBy('action_type')
+      .orderBy('action_type')
+      .execute();
+
+    return rows.map((row) => ({
+      value: row.value,
+      label: row.value,
+    }));
+  }
+
+  private parseOptionalEntityType(value: string | undefined) {
+    const normalized = this.parseOptionalText(value);
+
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (ACTIVITY_ENTITY_TYPES.includes(normalized as ActivityEntityType)) {
+      return normalized as ActivityEntityType;
+    }
+
+    throw new BadRequestException(
+      `entityType must be one of: ${ACTIVITY_ENTITY_TYPES.join(', ')}`,
+    );
+  }
+
+  private parseDateRange(value: string | undefined): ActivityDateRange {
+    const normalized = value?.trim();
+
+    if (!normalized || normalized === 'all') {
+      return 'all';
+    }
+
+    if (ACTIVITY_DATE_RANGES.includes(normalized as ActivityDateRange)) {
+      return normalized as ActivityDateRange;
+    }
+
+    throw new BadRequestException(
+      `dateRange must be one of: ${ACTIVITY_DATE_RANGES.join(', ')}`,
+    );
+  }
+
+  private parseOptionalText(value: string | undefined) {
+    const trimmed = value?.trim();
+
+    if (!trimmed || trimmed === 'all') {
+      return undefined;
+    }
+
+    return trimmed;
+  }
+
+  private daysAgo(days: number) {
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   }
 }
