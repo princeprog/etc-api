@@ -514,10 +514,14 @@ export class SalesService {
     const vehicle = (await this.vehiclesService.findOne(vehicleId)).vehicle;
 
     return {
-      sale: this.mapSaleProfitability(
-        mapSaleResponse(result.sale),
-        vehicle.trackedCostsTotal,
-      ),
+      sale: {
+        recordType: 'sale' as const,
+        status: this.getSaleStatus(result.commission),
+        ...this.mapSaleProfitability(
+          mapSaleResponse(result.sale),
+          vehicle.trackedCostsTotal,
+        ),
+      },
       commission: mapCommissionResponse(result.commission),
       vehicle,
     };
