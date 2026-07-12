@@ -551,6 +551,7 @@ export interface ExtensionsPgStatStatementsInfo {
 }
 
 export interface InventoryVehicleBrands {
+  archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   name: string;
@@ -558,6 +559,7 @@ export interface InventoryVehicleBrands {
 }
 
 export interface InventoryVehicleModels {
+  archived_at: Timestamp | null;
   brand_id: string;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
@@ -608,6 +610,7 @@ export interface InventoryVehicleTrackedCosts {
 }
 
 export interface InventoryVehicleVariants {
+  archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   model_id: string;
