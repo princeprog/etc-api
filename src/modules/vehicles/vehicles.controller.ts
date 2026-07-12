@@ -27,13 +27,21 @@ export class VehiclesController {
   constructor(private readonly vehiclesService: VehiclesService) {}
 
   @Post()
-  create(@CurrentUser() user: AuthUser, @Body() createVehicleDto: CreateVehicleDto) {
+  create(
+    @CurrentUser() user: AuthUser,
+    @Body() createVehicleDto: CreateVehicleDto,
+  ) {
     return this.vehiclesService.create(user, createVehicleDto);
   }
 
   @Get()
   findAll(@Query() query: ListVehiclesQueryDto) {
     return this.vehiclesService.findAll(query);
+  }
+
+  @Get('model-options')
+  listModelOptions() {
+    return this.vehiclesService.listModelOptions();
   }
 
   @Get(':id')

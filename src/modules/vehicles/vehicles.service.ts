@@ -130,6 +130,16 @@ export class VehiclesService {
       );
     }
 
+    const model = query?.model?.trim();
+
+    if (model) {
+      vehiclesQuery = vehiclesQuery.where(
+        sql`lower(model)`,
+        '=',
+        model.toLowerCase(),
+      );
+    }
+
     const vehicleIds = await vehiclesQuery
       .orderBy('created_at', 'desc')
       .execute();
@@ -138,6 +148,18 @@ export class VehiclesService {
       vehicleIds.map((vehicle) => this.getVehicleOrThrow(vehicle.id)),
     );
     return { vehicles };
+  }
+
+  async listModelOptions() {
+    const rows = await this.db
+      .selectFrom('inventory.vehicles')
+      .select('model')
+      .where(sql`nullif(trim(model), '')`, 'is not', null)
+      .groupBy('model')
+      .orderBy(sql`lower(model)`, 'asc')
+      .execute();
+
+    return { models: rows.map((row) => row.model) };
   }
 
   async findOne(id: string) {
