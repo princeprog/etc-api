@@ -84,7 +84,7 @@ export class AuthService {
     return { user: this.toCurrentUser(normalizedUser) };
   }
 
-  async me(user: CurrentUser): Promise<{ user: CurrentUser }> {
+  me(user: CurrentUser): { user: CurrentUser } {
     return { user };
   }
 
@@ -151,7 +151,6 @@ export class AuthService {
     const incomingRefreshHash = hashToken(refreshToken);
 
     if (incomingRefreshHash !== session.refreshTokenHash) {
-      await this.revokeSession(payload.sessionId);
       throw new UnauthorizedException('Refresh token has already been used');
     }
 
@@ -352,7 +351,9 @@ export class AuthService {
       entityType: 'user',
       entityId: updatedUser.id,
       actionType: 'user.status_changed',
-      summary: updateUserStatusDto.active ? 'Staff account enabled' : 'Staff account disabled',
+      summary: updateUserStatusDto.active
+        ? 'Staff account enabled'
+        : 'Staff account disabled',
       metadata: {
         email: updatedUser.email,
         fullName: updatedUser.full_name,
