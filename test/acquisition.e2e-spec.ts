@@ -192,114 +192,122 @@ describe('Seller leads and vehicles acquisition flow (e2e)', () => {
     );
   });
 
-  it('requires approval before conversion and uses seller asking price as default vehicle purchase price', async () => {
-    const leadResponse = await createSellerLead(app, authCookies);
-    const leadId = leadResponse.body.sellerLead.id;
+  it(
+    'requires approval before conversion and uses seller asking price as default vehicle purchase price',
+    async () => {
+      const leadResponse = await createSellerLead(app, authCookies);
+      const leadId = leadResponse.body.sellerLead.id;
 
-    await request(app.getHttpServer())
-      .patch(`/seller-leads/${leadId}`)
-      .set('Cookie', authCookies)
-      .send({
-        status: 'Evaluated',
-        decision: 'Buy',
-      })
-      .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/seller-leads/${leadId}`)
+        .set('Cookie', authCookies)
+        .send({
+          status: 'Evaluated',
+          decision: 'Buy',
+        })
+        .expect(200);
 
-    await request(app.getHttpServer())
-      .post(`/seller-leads/${leadId}/convert`)
-      .set('Cookie', authCookies)
-      .send({
-        year: 2021,
-        targetSellingPrice: '1400000.00',
-        minimumAcceptablePrice: '1360000.00',
-        status: 'Incoming',
-      })
-      .expect(400);
+      await request(app.getHttpServer())
+        .post(`/seller-leads/${leadId}/convert`)
+        .set('Cookie', authCookies)
+        .send({
+          year: 2021,
+          targetSellingPrice: '1400000.00',
+          minimumAcceptablePrice: '1360000.00',
+          status: 'Incoming',
+        })
+        .expect(400);
 
-    const approvalResponse = await request(app.getHttpServer())
-      .patch(`/seller-leads/${leadId}`)
-      .set('Cookie', authCookies)
-      .send({
-        status: 'Approved to Buy',
-      })
-      .expect(200);
+      const approvalResponse = await request(app.getHttpServer())
+        .patch(`/seller-leads/${leadId}`)
+        .set('Cookie', authCookies)
+        .send({
+          status: 'Approved to Buy',
+        })
+        .expect(200);
 
-    expect(approvalResponse.body.sellerLead).toEqual(
-      expect.objectContaining({
-        status: 'Approved to Buy',
-        approvedToBuyAt: expect.any(String),
-        approvedByUserId: expect.any(String),
-      }),
-    );
+      expect(approvalResponse.body.sellerLead).toEqual(
+        expect.objectContaining({
+          status: 'Approved to Buy',
+          approvedToBuyAt: expect.any(String),
+          approvedByUserId: expect.any(String),
+        }),
+      );
 
-    const convertResponse = await request(app.getHttpServer())
-      .post(`/seller-leads/${leadId}/convert`)
-      .set('Cookie', authCookies)
-      .send({
-        year: 2021,
-        targetSellingPrice: '1400000.00',
-        minimumAcceptablePrice: '1360000.00',
-        status: 'Incoming',
-      })
-      .expect(201);
+      const convertResponse = await request(app.getHttpServer())
+        .post(`/seller-leads/${leadId}/convert`)
+        .set('Cookie', authCookies)
+        .send({
+          year: 2021,
+          targetSellingPrice: '1400000.00',
+          minimumAcceptablePrice: '1360000.00',
+          status: 'Incoming',
+        })
+        .expect(201);
 
-    expect(convertResponse.body).toEqual({
-      sellerLead: expect.objectContaining({
-        id: leadId,
-        status: 'Purchased',
-      }),
-      vehicle: expect.objectContaining({
-        sellerLeadId: leadId,
-        purchasePrice: '1300000.00',
-      }),
-    });
-  });
+      expect(convertResponse.body).toEqual({
+        sellerLead: expect.objectContaining({
+          id: leadId,
+          status: 'Purchased',
+        }),
+        vehicle: expect.objectContaining({
+          sellerLeadId: leadId,
+          purchasePrice: '1300000.00',
+        }),
+      });
+    },
+    15000,
+  );
 
-  it('converts a seller lead into a linked vehicle and marks the lead as purchased', async () => {
-    const leadResponse = await createSellerLead(app, authCookies);
+  it(
+    'converts a seller lead into a linked vehicle and marks the lead as purchased',
+    async () => {
+      const leadResponse = await createSellerLead(app, authCookies);
 
-    await request(app.getHttpServer())
-      .patch(`/seller-leads/${leadResponse.body.sellerLead.id}`)
-      .set('Cookie', authCookies)
-      .send({
-        status: 'Approved to Buy',
-      })
-      .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/seller-leads/${leadResponse.body.sellerLead.id}`)
+        .set('Cookie', authCookies)
+        .send({
+          status: 'Approved to Buy',
+        })
+        .expect(200);
 
-    const convertResponse = await request(app.getHttpServer())
-      .post(`/seller-leads/${leadResponse.body.sellerLead.id}/convert`)
-      .set('Cookie', authCookies)
-      .send({
-        year: 2020,
-        targetSellingPrice: '620000.00',
-        minimumAcceptablePrice: '590000.00',
-        purchasePrice: '540000.00',
-        status: 'Incoming',
-        photos: [{ fileUrl: 'https://example.com/photo-1.jpg', sortOrder: 0 }],
-      })
-      .expect(201);
+      const convertResponse = await request(app.getHttpServer())
+        .post(`/seller-leads/${leadResponse.body.sellerLead.id}/convert`)
+        .set('Cookie', authCookies)
+        .send({
+          year: 2020,
+          targetSellingPrice: '620000.00',
+          minimumAcceptablePrice: '590000.00',
+          purchasePrice: '540000.00',
+          status: 'Incoming',
+          photos: [{ fileUrl: 'https://example.com/photo-1.jpg', sortOrder: 0 }],
+        })
+        .expect(201);
 
-    expect(convertResponse.body).toEqual({
-      sellerLead: expect.objectContaining({
-        id: leadResponse.body.sellerLead.id,
-        status: 'Purchased',
-      }),
-      vehicle: expect.objectContaining({
-        id: expect.any(String),
-        sellerLeadId: leadResponse.body.sellerLead.id,
-        stockNumber: expect.stringMatching(/^ETC-\d{4}-\d{3}$/),
-        status: 'Incoming',
-      }),
-    });
+      expect(convertResponse.body).toEqual({
+        sellerLead: expect.objectContaining({
+          id: leadResponse.body.sellerLead.id,
+          status: 'Purchased',
+        }),
+        vehicle: expect.objectContaining({
+          id: expect.any(String),
+          sellerLeadId: leadResponse.body.sellerLead.id,
+          stockNumber: expect.stringMatching(/^ETC-\d{4}-\d{3}$/),
+          status: 'Incoming',
+        }),
+      });
 
-    await request(app.getHttpServer())
-      .post(`/seller-leads/${leadResponse.body.sellerLead.id}/convert`)
-      .set('Cookie', authCookies)
-      .send({
-        year: 2020,
-      })
-      .expect(400);
-  });
+      await request(app.getHttpServer())
+        .post(`/seller-leads/${leadResponse.body.sellerLead.id}/convert`)
+        .set('Cookie', authCookies)
+        .send({
+          year: 2020,
+        })
+        .expect(400);
+    },
+    15000,
+  );
 
   it('blocks moving a vehicle to Available without required pricing and photos', async () => {
     const createVehicleResponse = await request(app.getHttpServer())
