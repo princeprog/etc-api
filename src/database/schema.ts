@@ -144,9 +144,6 @@ export interface SellerLeadsTable {
   inspection_completed_at: Date | null;
   inspection_notes: string | null;
   inspection_findings: SellerLeadInspectionFindings | null;
-  target_buy_price: string | null;
-  expected_resale_price: string | null;
-  target_profit_amount: string | null;
   decision: SellerLeadDecision | null;
   decision_note: string | null;
   approved_to_buy_at: Date | null;
@@ -155,16 +152,6 @@ export interface SellerLeadsTable {
   assignee_user_id: string | null;
   latest_activity_at: Date | null;
   closing_note: string | null;
-  created_at: Generated<Date>;
-  updated_at: Generated<Date>;
-}
-
-export interface SellerLeadEstimatedCostsTable {
-  id: Generated<string>;
-  seller_lead_id: string;
-  category: VehicleTrackedCostCategory;
-  amount: string;
-  note: string;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -282,7 +269,6 @@ export interface DB {
   'inventory.vehicle_photos': VehiclePhotosTable;
   'inventory.vehicle_tracked_costs': VehicleTrackedCostsTable;
   'crm.seller_leads': SellerLeadsTable;
-  'crm.seller_lead_estimated_costs': SellerLeadEstimatedCostsTable;
   'crm.buyer_leads': BuyerLeadsTable;
   'crm.lead_vehicle_links': LeadVehicleLinksTable;
   'crm.lead_activities': LeadActivitiesTable;
@@ -311,12 +297,6 @@ export type VehicleTrackedCostUpdate = Updateable<VehicleTrackedCostsTable>;
 export type SellerLead = Selectable<SellerLeadsTable>;
 export type NewSellerLead = Insertable<SellerLeadsTable>;
 export type SellerLeadUpdate = Updateable<SellerLeadsTable>;
-export type SellerLeadEstimatedCost =
-  Selectable<SellerLeadEstimatedCostsTable>;
-export type NewSellerLeadEstimatedCost =
-  Insertable<SellerLeadEstimatedCostsTable>;
-export type SellerLeadEstimatedCostUpdate =
-  Updateable<SellerLeadEstimatedCostsTable>;
 
 export type BuyerLead = Selectable<BuyerLeadsTable>;
 export type NewBuyerLead = Insertable<BuyerLeadsTable>;

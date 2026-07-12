@@ -451,16 +451,6 @@ export interface CrmLeadVehicleLinks {
   vehicle_id: string;
 }
 
-export interface CrmSellerLeadEstimatedCosts {
-  amount: Numeric;
-  category: string;
-  created_at: Generated<Timestamp>;
-  id: Generated<string>;
-  note: string;
-  seller_lead_id: string;
-  updated_at: Generated<Timestamp>;
-}
-
 export interface CrmSellerLeads {
   approved_by_user_id: string | null;
   approved_to_buy_at: Timestamp | null;
@@ -472,7 +462,6 @@ export interface CrmSellerLeads {
   decision: string | null;
   decision_note: string | null;
   email: string | null;
-  expected_resale_price: Numeric | null;
   facebook_name: string | null;
   id: Generated<string>;
   inquiry_source: string | null;
@@ -484,8 +473,6 @@ export interface CrmSellerLeads {
   region: string | null;
   seller_name: string;
   status: string;
-  target_buy_price: Numeric | null;
-  target_profit_amount: Numeric | null;
   updated_at: Generated<Timestamp>;
   vehicle_brand: string;
   vehicle_model: string;
@@ -853,7 +840,6 @@ export interface DB {
   "crm.follow_ups": CrmFollowUps;
   "crm.lead_activities": CrmLeadActivities;
   "crm.lead_vehicle_links": CrmLeadVehicleLinks;
-  "crm.seller_lead_estimated_costs": CrmSellerLeadEstimatedCosts;
   "crm.seller_leads": CrmSellerLeads;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;

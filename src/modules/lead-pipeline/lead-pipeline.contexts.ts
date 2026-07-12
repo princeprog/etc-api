@@ -38,8 +38,6 @@ export type SellerLeadPipelineContext = {
   vehicleModel: string;
   vehicleYear: number | null;
   askingPrice: string | null;
-  targetBuyPrice: string | null;
-  expectedResalePrice: string | null;
   assigneeUserId: string | null;
   latestActivityAt: Date | null;
   createdAt: Date;

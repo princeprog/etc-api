@@ -25,18 +25,12 @@ import {
 import { ConvertSellerLeadDto } from './dto/convert-seller-lead.dto';
 import { CreateSellerLeadDto } from './dto/create-seller-lead.dto';
 import { ListSellerLeadsQueryDto } from './dto/list-seller-leads-query.dto';
-import { SellerLeadEstimatedCostDto } from './dto/seller-lead-estimated-cost.dto';
 import { UpdateSellerLeadDto } from './dto/update-seller-lead.dto';
 import {
-  calculateSellerLeadEvaluationSummary,
-  mapSellerLeadEstimatedCostResponse,
   mapSellerLeadResponse,
   normalizeOptionalMoney,
-  normalizeSellerLeadEstimatedCostAmount,
-  normalizeSellerLeadEstimatedCostNote,
   parseOptionalIsoDate,
   parseSellerLeadDecision,
-  parseSellerLeadEstimatedCostCategory,
   parseSellerLeadStatus,
   serializeInspectionFindings,
 } from './seller-leads.helpers';
@@ -84,13 +78,6 @@ export class SellerLeadsService {
         inspection_notes: createSellerLeadDto.inspectionNotes ?? null,
         inspection_findings: serializeInspectionFindings(
           createSellerLeadDto.inspectionFindings,
-        ),
-        target_buy_price: normalizeOptionalMoney(createSellerLeadDto.targetBuyPrice),
-        expected_resale_price: normalizeOptionalMoney(
-          createSellerLeadDto.expectedResalePrice,
-        ),
-        target_profit_amount: normalizeOptionalMoney(
-          createSellerLeadDto.targetProfitAmount,
         ),
         decision: parseSellerLeadDecision(createSellerLeadDto.decision),
         decision_note: createSellerLeadDto.decisionNote ?? null,
@@ -312,27 +299,6 @@ export class SellerLeadsService {
               ),
             }
           : {}),
-        ...(updateSellerLeadDto.targetBuyPrice !== undefined
-          ? {
-              target_buy_price: normalizeOptionalMoney(
-                updateSellerLeadDto.targetBuyPrice,
-              ),
-            }
-          : {}),
-        ...(updateSellerLeadDto.expectedResalePrice !== undefined
-          ? {
-              expected_resale_price: normalizeOptionalMoney(
-                updateSellerLeadDto.expectedResalePrice,
-              ),
-            }
-          : {}),
-        ...(updateSellerLeadDto.targetProfitAmount !== undefined
-          ? {
-              target_profit_amount: normalizeOptionalMoney(
-                updateSellerLeadDto.targetProfitAmount,
-              ),
-            }
-          : {}),
         ...(updateSellerLeadDto.decision !== undefined
           ? { decision: parseSellerLeadDecision(updateSellerLeadDto.decision) }
           : {}),
@@ -391,37 +357,6 @@ export class SellerLeadsService {
     return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
   }
 
-  async createEstimatedCost(id: string, dto: SellerLeadEstimatedCostDto) {
-    await this.getLeadRecordOrThrow(id);
-
-    await this.db
-      .insertInto('crm.seller_lead_estimated_costs')
-      .values({
-        seller_lead_id: id,
-        category: parseSellerLeadEstimatedCostCategory(dto.category),
-        amount: normalizeSellerLeadEstimatedCostAmount(dto.amount),
-        note: normalizeSellerLeadEstimatedCostNote(dto.note),
-      })
-      .executeTakeFirstOrThrow();
-
-    const sellerLead = await this.getLeadRecordOrThrow(id);
-    return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
-  }
-
-  async deleteEstimatedCost(id: string, costId: string) {
-    await this.getLeadRecordOrThrow(id);
-    await this.getEstimatedCostOrThrow(id, costId);
-
-    await this.db
-      .deleteFrom('crm.seller_lead_estimated_costs')
-      .where('id', '=', costId)
-      .where('seller_lead_id', '=', id)
-      .execute();
-
-    const sellerLead = await this.getLeadRecordOrThrow(id);
-    return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
-  }
-
   async convert(user: CurrentUser, id: string, convertSellerLeadDto: ConvertSellerLeadDto) {
     return this.db.transaction().execute(async (trx) => {
       const sellerLead = await this.getLeadRecordOrThrow(id, trx);
@@ -470,7 +405,6 @@ export class SellerLeadsService {
         remarks: convertSellerLeadDto.remarks,
         purchasePrice:
           convertSellerLeadDto.purchasePrice ??
-          sellerLead.target_buy_price ??
           sellerLead.asking_price,
         targetSellingPrice: convertSellerLeadDto.targetSellingPrice,
         minimumAcceptablePrice: convertSellerLeadDto.minimumAcceptablePrice,
@@ -597,15 +531,6 @@ export class SellerLeadsService {
     sellerLead: Awaited<ReturnType<typeof this.getLeadRecordOrThrow>>,
     executor?: Kysely<DB> | Transaction<DB>,
   ) {
-    const estimatedCosts = await this.getEstimatedCosts(sellerLead.id, executor);
-    const summary = calculateSellerLeadEvaluationSummary({
-      askingPrice: sellerLead.asking_price,
-      targetBuyPrice: sellerLead.target_buy_price,
-      expectedResalePrice: sellerLead.expected_resale_price,
-      targetProfitAmount: sellerLead.target_profit_amount,
-      estimatedCosts,
-    });
-
     const pipelineContext = await this.getSellerLeadPipelineContext(
       [sellerLead.id],
       executor,
@@ -621,8 +546,6 @@ export class SellerLeadsService {
         vehicleModel: sellerLead.vehicle_model,
         vehicleYear: sellerLead.vehicle_year,
         askingPrice: sellerLead.asking_price,
-        targetBuyPrice: sellerLead.target_buy_price,
-        expectedResalePrice: sellerLead.expected_resale_price,
         assigneeUserId: sellerLead.assignee_user_id,
         latestActivityAt: sellerLead.latest_activity_at,
         createdAt: sellerLead.created_at,
@@ -634,8 +557,6 @@ export class SellerLeadsService {
 
     return mapSellerLeadResponse({
       ...sellerLead,
-      estimatedCosts: estimatedCosts.map(mapSellerLeadEstimatedCostResponse),
-      ...summary,
       pipeline: pipelineByLeadId.get(sellerLead.id) ?? null,
     });
   }
@@ -649,23 +570,7 @@ export class SellerLeadsService {
       return [];
     }
 
-    const [pipelineContext, estimatedCostRows] = await Promise.all([
-      this.getSellerLeadPipelineContext(leadIds),
-      this.db
-        .selectFrom('crm.seller_lead_estimated_costs')
-        .selectAll()
-        .where('seller_lead_id', 'in', leadIds)
-        .orderBy('created_at', 'asc')
-        .execute(),
-    ]);
-
-    const estimatedCostsByLeadId = new Map<string, typeof estimatedCostRows>();
-    for (const leadId of leadIds) {
-      estimatedCostsByLeadId.set(leadId, []);
-    }
-    for (const row of estimatedCostRows) {
-      estimatedCostsByLeadId.get(row.seller_lead_id)?.push(row);
-    }
+    const pipelineContext = await this.getSellerLeadPipelineContext(leadIds);
 
     const pipelineByLeadId = await this.leadPipelineService.buildSellerLeadPipelines(
       sellerLeads.map((lead) => ({
@@ -678,8 +583,6 @@ export class SellerLeadsService {
         vehicleModel: lead.vehicle_model,
         vehicleYear: lead.vehicle_year,
         askingPrice: lead.asking_price,
-        targetBuyPrice: lead.target_buy_price,
-        expectedResalePrice: lead.expected_resale_price,
         assigneeUserId: lead.assignee_user_id,
         latestActivityAt: lead.latest_activity_at,
         createdAt: lead.created_at,
@@ -689,23 +592,12 @@ export class SellerLeadsService {
       })),
     );
 
-    return sellerLeads.map((lead) => {
-      const estimatedCosts = estimatedCostsByLeadId.get(lead.id) ?? [];
-      const summary = calculateSellerLeadEvaluationSummary({
-        askingPrice: lead.asking_price,
-        targetBuyPrice: lead.target_buy_price,
-        expectedResalePrice: lead.expected_resale_price,
-        targetProfitAmount: lead.target_profit_amount,
-        estimatedCosts,
-      });
-
-      return mapSellerLeadResponse({
+    return sellerLeads.map((lead) =>
+      mapSellerLeadResponse({
         ...lead,
-        estimatedCosts: estimatedCosts.map(mapSellerLeadEstimatedCostResponse),
-        ...summary,
         pipeline: pipelineByLeadId.get(lead.id) ?? null,
-      });
-    });
+      }),
+    );
   }
 
   private async getSellerLeadPipelineContext(
@@ -877,36 +769,6 @@ export class SellerLeadsService {
       status: parseSellerLeadStatus(sellerLead.status, 'New Inquiry'),
       decision: parseSellerLeadDecision(sellerLead.decision),
     };
-  }
-
-  private async getEstimatedCosts(
-    sellerLeadId: string,
-    executor?: Kysely<DB> | Transaction<DB>,
-  ) {
-    const db = executor ?? this.db;
-    return db
-      .selectFrom('crm.seller_lead_estimated_costs')
-      .selectAll()
-      .where('seller_lead_id', '=', sellerLeadId)
-      .orderBy('created_at', 'asc')
-      .execute();
-  }
-
-  private async getEstimatedCostOrThrow(sellerLeadId: string, costId: string) {
-    const estimatedCost = await this.db
-      .selectFrom('crm.seller_lead_estimated_costs')
-      .selectAll()
-      .where('id', '=', costId)
-      .where('seller_lead_id', '=', sellerLeadId)
-      .executeTakeFirst();
-
-    if (!estimatedCost) {
-      throw new NotFoundException(
-        `Estimated cost ${costId} was not found for seller lead ${sellerLeadId}`,
-      );
-    }
-
-    return estimatedCost;
   }
 
   private requireNonEmpty(value: string, field: string) {

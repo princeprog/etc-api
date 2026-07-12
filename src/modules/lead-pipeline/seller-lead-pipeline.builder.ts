@@ -21,10 +21,10 @@ export function buildSellerLeadPipeline(
   const hasVehicleDetails = Boolean(
     lead.vehicleBrand.trim() && lead.vehicleModel.trim() && lead.vehicleYear !== null,
   );
-  const hasPricing = Boolean(lead.targetBuyPrice || lead.askingPrice);
+  const hasAskingPrice = Boolean(lead.askingPrice);
   const readyForReview =
     hasVehicleDetails &&
-    hasPricing &&
+    hasAskingPrice &&
     ['Evaluated', 'Negotiating', 'Approved to Buy'].includes(lead.status);
 
   if (!lead.contactNumber.trim() && !lead.email && !lead.facebookName) {
@@ -57,11 +57,11 @@ export function buildSellerLeadPipeline(
     });
   }
 
-  if (hasVehicleDetails && !hasPricing && lead.status !== 'Purchased') {
+  if (hasVehicleDetails && !hasAskingPrice && lead.status !== 'Purchased') {
     blockers.push({
       code: 'seller_pricing_missing',
-      label: 'Pricing details missing',
-      description: 'Add the asking or target buy price before acquisition review.',
+      label: 'Asking price missing',
+      description: 'Add the seller asking price before acquisition review.',
       severity: 'critical',
       target: 'lead_edit',
     });
@@ -140,18 +140,18 @@ export function buildSellerLeadPipeline(
       description: 'Schedule a follow-up to keep this seller lead moving.',
       target: 'follow_up',
     };
-  } else if (!hasVehicleDetails || !hasPricing) {
+  } else if (!hasVehicleDetails || !hasAskingPrice) {
     nextAction = {
       code: 'complete_vehicle_details',
       label: 'Complete vehicle details',
-      description: 'Fill in the missing vehicle and pricing details needed for review.',
+      description: 'Fill in the missing vehicle details and seller asking price needed for review.',
       target: 'lead_edit',
     };
   } else if (lead.status !== 'Approved to Buy') {
     nextAction = {
-      code: 'review_acquisition_pricing',
-      label: 'Review acquisition pricing',
-      description: 'Review the pricing and inspection details before approving this acquisition.',
+      code: 'review_acquisition_decision',
+      label: 'Review acquisition decision',
+      description: 'Review the inspection details before deciding the acquisition path.',
       target: 'lead_edit',
     };
   } else {

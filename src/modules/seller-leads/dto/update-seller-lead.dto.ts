@@ -20,9 +20,6 @@ export class UpdateSellerLeadDto {
   inspectionCompletedAt?: string | null;
   inspectionNotes?: string | null;
   inspectionFindings?: SellerLeadInspectionFindings | null;
-  targetBuyPrice?: string | null;
-  expectedResalePrice?: string | null;
-  targetProfitAmount?: string | null;
   decision?: SellerLeadDecision | null;
   decisionNote?: string | null;
   status?: SellerLeadStatus;

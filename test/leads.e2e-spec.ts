@@ -796,8 +796,6 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .send({
         vehicleYear: 2021,
         askingPrice: '900000.00',
-        targetBuyPrice: '830000.00',
-        expectedResalePrice: '980000.00',
         status: 'Negotiating',
       })
       .expect(200);
@@ -811,7 +809,7 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       expect.objectContaining({
         stage: 'acquisition_review',
         nextAction: expect.objectContaining({
-          code: 'review_acquisition_pricing',
+          code: 'review_acquisition_decision',
         }),
       }),
     );
@@ -941,8 +939,6 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .set('Cookie', authCookies)
       .send({
         askingPrice: '950000.00',
-        targetBuyPrice: '880000.00',
-        expectedResalePrice: '1020000.00',
         status: 'Approved to Buy',
       })
       .expect(200);

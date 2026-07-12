@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Patch,
@@ -16,7 +15,6 @@ import type { CurrentUser as AuthUser } from '../../common/types/auth.types';
 import { ConvertSellerLeadDto } from './dto/convert-seller-lead.dto';
 import { CreateSellerLeadDto } from './dto/create-seller-lead.dto';
 import { ListSellerLeadsQueryDto } from './dto/list-seller-leads-query.dto';
-import { SellerLeadEstimatedCostDto } from './dto/seller-lead-estimated-cost.dto';
 import { UpdateSellerLeadDto } from './dto/update-seller-lead.dto';
 import { SellerLeadsService } from './seller-leads.service';
 
@@ -50,22 +48,6 @@ export class SellerLeadsController {
     @Body() updateSellerLeadDto: UpdateSellerLeadDto,
   ) {
     return this.sellerLeadsService.update(id, updateSellerLeadDto, user);
-  }
-
-  @Post(':id/estimated-costs')
-  createEstimatedCost(
-    @Param('id') id: string,
-    @Body() dto: SellerLeadEstimatedCostDto,
-  ) {
-    return this.sellerLeadsService.createEstimatedCost(id, dto);
-  }
-
-  @Delete(':id/estimated-costs/:costId')
-  deleteEstimatedCost(
-    @Param('id') id: string,
-    @Param('costId') costId: string,
-  ) {
-    return this.sellerLeadsService.deleteEstimatedCost(id, costId);
   }
 
   @Post(':id/convert')
