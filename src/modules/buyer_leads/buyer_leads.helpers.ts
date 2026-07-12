@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 import type { BuyerLeadStatus } from '../../database/schema';
+import type { LeadPipelineState } from '../lead-pipeline/lead-pipeline.types';
 
 const BUYER_LEAD_STATUSES: BuyerLeadStatus[] = [
   'New Inquiry',
@@ -50,6 +51,7 @@ export function mapBuyerLeadResponse(lead: {
     year: number;
     status: string;
   }>;
+  pipeline?: LeadPipelineState;
 }) {
   return {
     id: lead.id,
@@ -67,5 +69,6 @@ export function mapBuyerLeadResponse(lead: {
     createdAt: lead.created_at,
     updatedAt: lead.updated_at,
     vehicles: lead.vehicles,
+    pipeline: lead.pipeline ?? null,
   };
 }

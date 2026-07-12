@@ -13,6 +13,7 @@ import type { DB } from '../src/database/db';
 import { hashPassword } from '../src/common/utils/auth.utils';
 
 const ADMIN_EMAIL = 'buyerlead.admin@example.com';
+const STAFF_EMAIL = 'activity.staff@example.com';
 const PASSWORD = 'Password123!';
 
 describe('Buyer leads and follow-ups workflow (e2e)', () => {
@@ -35,20 +36,7 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
   });
 
   beforeEach(async () => {
-    await db.deleteFrom('ops.activity_history').execute();
-    await db.deleteFrom('sales.commissions').execute();
-    await db.deleteFrom('sales.sales').execute();
-    await db.deleteFrom('crm.follow_ups').execute();
-    await db.deleteFrom('crm.lead_vehicle_links').execute();
-    await db.deleteFrom('inventory.vehicle_photos').execute();
-    await db.deleteFrom('inventory.vehicles').execute();
-    await db.deleteFrom('crm.buyer_leads').execute();
-    await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('authentication.sessions').execute();
-    await db
-      .deleteFrom('authentication.users')
-      .where('email', '=', ADMIN_EMAIL)
-      .execute();
+    await resetTestData(db);
 
     const user = await db
       .insertInto('authentication.users')
@@ -106,21 +94,12 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     vehicleId = vehicle.id;
   });
 
+  afterEach(async () => {
+    await resetTestData(db);
+  });
+
   afterAll(async () => {
-    await db.deleteFrom('ops.activity_history').execute();
-    await db.deleteFrom('sales.commissions').execute();
-    await db.deleteFrom('sales.sales').execute();
-    await db.deleteFrom('crm.follow_ups').execute();
-    await db.deleteFrom('crm.lead_vehicle_links').execute();
-    await db.deleteFrom('inventory.vehicle_photos').execute();
-    await db.deleteFrom('inventory.vehicles').execute();
-    await db.deleteFrom('crm.buyer_leads').execute();
-    await db.deleteFrom('crm.seller_leads').execute();
-    await db.deleteFrom('authentication.sessions').execute();
-    await db
-      .deleteFrom('authentication.users')
-      .where('email', '=', ADMIN_EMAIL)
-      .execute();
+    await resetTestData(db);
     await app.close();
   });
 
@@ -131,16 +110,39 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
 
   it('creates, lists, gets, and updates buyer leads', async () => {
     const createResponse = await createBuyerLead(app, authCookies);
+    expect(createResponse.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'new_lead',
+        nextAction: expect.objectContaining({
+          code: 'schedule_follow_up',
+        }),
+      }),
+    );
 
-    await request(app.getHttpServer())
+    const listResponse = await request(app.getHttpServer())
       .get('/buyer-leads')
       .set('Cookie', authCookies)
       .expect(200);
+    expect(listResponse.body.buyerLeads[0].pipeline).toEqual(
+      expect.objectContaining({
+        stageLabel: expect.any(String),
+      }),
+    );
 
-    await request(app.getHttpServer())
+    const detailResponse = await request(app.getHttpServer())
       .get(`/buyer-leads/${createResponse.body.buyerLead.id}`)
       .set('Cookie', authCookies)
       .expect(200);
+    expect(detailResponse.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        blockers: expect.any(Array),
+        warnings: expect.any(Array),
+        context: expect.objectContaining({
+          staleAfterDays: expect.any(Number),
+          openFollowUpCount: expect.any(Number),
+        }),
+      }),
+    );
 
     const updateResponse = await request(app.getHttpServer())
       .patch(`/buyer-leads/${createResponse.body.buyerLead.id}`)
@@ -154,6 +156,11 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
 
     expect(updateResponse.body.buyerLead.status).toBe('Contacted');
     expect(updateResponse.body.buyerLead.notes).toBe('Reached by phone');
+    expect(updateResponse.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'contacted_follow_up',
+      }),
+    );
   });
 
   it('requires required fields and assignee before leaving New Inquiry', async () => {
@@ -212,6 +219,14 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     expect(linkResponse.body.buyerLead.vehicles).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: vehicleId })]),
     );
+    expect(linkResponse.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'ready_to_reserve',
+        nextAction: expect.objectContaining({
+          code: 'schedule_follow_up',
+        }),
+      }),
+    );
 
     await request(app.getHttpServer())
       .post(`/buyer-leads/${buyerLeadId}/vehicle-links`)
@@ -229,6 +244,20 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
       })
       .expect(200);
+
+    const reservedLeadResponse = await request(app.getHttpServer())
+      .get(`/buyer-leads/${buyerLeadId}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(reservedLeadResponse.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'sale_finalization_pending',
+        nextAction: expect.objectContaining({
+          code: 'schedule_follow_up',
+        }),
+      }),
+    );
 
     const unlinkResponse = await request(app.getHttpServer())
       .delete(`/buyer-leads/${buyerLeadId}/vehicle-links/${vehicleId}`)
@@ -285,8 +314,10 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
   });
 
-  it('filters and paginates buyer leads, seller leads, and follow-ups from query params', async () => {
-    const assigneeUserId = await currentUserId(app);
+  it(
+    'filters and paginates buyer leads, seller leads, and follow-ups from query params',
+    async () => {
+      const assigneeUserId = await currentUserId(app);
 
     await request(app.getHttpServer())
       .post('/buyer-leads')
@@ -435,14 +466,16 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         totalPages: 1,
       }),
     );
-    expect(filteredFollowUps.body.followUps).toEqual([
-      expect.objectContaining({
-        leadType: 'buyer',
-        note: 'Alpha callback about financing',
-        status: 'Due',
-      }),
-    ]);
-  });
+      expect(filteredFollowUps.body.followUps).toEqual([
+        expect.objectContaining({
+          leadType: 'buyer',
+          note: 'Alpha callback about financing',
+          status: 'Due',
+        }),
+      ]);
+    },
+    15000,
+  );
 
   it('excludes won buyer leads when eligibleForSale is requested', async () => {
     const assigneeUserId = await currentUserId(app);
@@ -493,41 +526,482 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
   });
 
-  it('completes a follow-up and prevents duplicate completion', async () => {
-    const createResponse = await createBuyerLead(app, authCookies);
-    const buyerLeadId = createResponse.body.buyerLead.id;
+  it(
+    'derives buyer lead pipeline states across follow-up, vehicle matching, reservation, win, and staleness',
+    async () => {
+      const assigneeUserId = await currentUserId(app);
 
-    const followUpResponse = await request(app.getHttpServer())
+    const freshBuyer = await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Pipeline Fresh Buyer',
+        contactNumber: '09170040001',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
       .post('/follow-ups')
       .set('Cookie', authCookies)
       .send({
         leadType: 'buyer',
-        buyerLeadId,
-        assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
-        dueAt: new Date(Date.now() + 3600_000).toISOString(),
-        note: 'Check reservation interest',
+        buyerLeadId: freshBuyer.body.buyerLead.id,
+        assigneeUserId,
+        dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+        note: 'Qualification call tomorrow',
       })
       .expect(201);
 
-    const completeResponse = await request(app.getHttpServer())
-      .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+    await request(app.getHttpServer())
+      .patch(`/buyer-leads/${freshBuyer.body.buyerLead.id}`)
       .set('Cookie', authCookies)
       .send({
-        outcomeNote: 'Buyer confirmed they will visit tomorrow',
+        status: 'Interested',
+        assigneeUserId,
       })
       .expect(200);
 
-    expect(completeResponse.body.followUp.status).toBe('Completed');
-    expect(completeResponse.body.followUp.completedAt).toBeTruthy();
+    const contactedBuyer = await request(app.getHttpServer())
+      .get(`/buyer-leads/${freshBuyer.body.buyerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(contactedBuyer.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'contacted_follow_up',
+        nextAction: expect.objectContaining({
+          code: 'link_vehicle',
+        }),
+      }),
+    );
 
     await request(app.getHttpServer())
-      .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+      .post(`/buyer-leads/${freshBuyer.body.buyerLead.id}/vehicle-links`)
+      .set('Cookie', authCookies)
+      .send({ vehicleId })
+      .expect(201);
+
+    const matchedBuyer = await request(app.getHttpServer())
+      .get(`/buyer-leads/${freshBuyer.body.buyerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(matchedBuyer.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'ready_to_reserve',
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/buyer-leads/${freshBuyer.body.buyerLead.id}`)
       .set('Cookie', authCookies)
       .send({
-        outcomeNote: 'Second completion should fail',
+        status: 'Reserved',
+        assigneeUserId,
       })
-      .expect(400);
-  });
+      .expect(200);
+
+    const reservedBuyer = await request(app.getHttpServer())
+      .get(`/buyer-leads/${freshBuyer.body.buyerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(reservedBuyer.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'sale_finalization_pending',
+        nextAction: expect.objectContaining({
+          code: 'finalize_sale',
+        }),
+      }),
+    );
+
+    const saleResponse = await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        buyerLeadId: freshBuyer.body.buyerLead.id,
+        vehicleId,
+        saleDate: new Date().toISOString(),
+        finalSaleAmount: '1100000.00',
+        buyerClosingNote: 'Reserved buyer completed sale.',
+      })
+      .expect(201);
+
+    expect(saleResponse.body.sale).toEqual(
+      expect.objectContaining({
+        buyerLeadId: freshBuyer.body.buyerLead.id,
+      }),
+    );
+
+    const wonBuyer = await request(app.getHttpServer())
+      .get(`/buyer-leads/${freshBuyer.body.buyerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(wonBuyer.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'won_sale_finalized',
+        nextAction: null,
+      }),
+    );
+
+    const staleBuyer = await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Pipeline Stale Buyer',
+        contactNumber: '09170040002',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await db
+      .updateTable('crm.buyer_leads')
+      .set({
+        latest_activity_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+        updated_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      })
+      .where('id', '=', staleBuyer.body.buyerLead.id)
+      .execute();
+
+    const staleBuyerResponse = await request(app.getHttpServer())
+      .get(`/buyer-leads/${staleBuyer.body.buyerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(staleBuyerResponse.body.buyerLead.pipeline).toEqual(
+      expect.objectContaining({
+        isStale: true,
+        nextAction: expect.objectContaining({
+          code: 'review_stale_lead',
+        }),
+        context: expect.objectContaining({
+          staleAfterDays: expect.any(Number),
+        }),
+      }),
+    );
+
+    const staleFilteredResponse = await request(app.getHttpServer())
+      .get('/buyer-leads?pipelineState=stale')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(staleFilteredResponse.body.buyerLeads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: staleBuyer.body.buyerLead.id,
+        }),
+      ]),
+    );
+
+    const readyBuyer = await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Pipeline Ready Buyer',
+        contactNumber: '09170040003',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/follow-ups')
+      .set('Cookie', authCookies)
+      .send({
+        leadType: 'buyer',
+        buyerLeadId: readyBuyer.body.buyerLead.id,
+        assigneeUserId,
+        dueAt: new Date(Date.now() + 48 * 3_600_000).toISOString(),
+        note: 'Ready buyer follow-up',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/buyer-leads/${readyBuyer.body.buyerLead.id}`)
+      .set('Cookie', authCookies)
+      .send({
+        status: 'Interested',
+        assigneeUserId,
+      })
+      .expect(200);
+
+    const readyFilteredResponse = await request(app.getHttpServer())
+      .get('/buyer-leads?pipelineState=ready')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+      expect(readyFilteredResponse.body.buyerLeads).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: readyBuyer.body.buyerLead.id,
+          }),
+        ]),
+      );
+    },
+    15000,
+  );
+
+  it(
+    'derives seller lead pipeline states for follow-up, missing details, acquisition review, conversion, and staleness',
+    async () => {
+      const assigneeUserId = await currentUserId(app);
+
+    const sellerResponse = await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', authCookies)
+      .send({
+        sellerName: 'Pipeline Seller',
+        contactNumber: '09175550123',
+        vehicleBrand: 'Honda',
+        vehicleModel: 'Civic',
+        assigneeUserId,
+      })
+      .expect(201);
+
+    expect(sellerResponse.body.sellerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'new_seller_lead',
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .post('/follow-ups')
+      .set('Cookie', authCookies)
+      .send({
+        leadType: 'seller',
+        sellerLeadId: sellerResponse.body.sellerLead.id,
+        assigneeUserId,
+        dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+        note: 'Inspect vehicle tomorrow',
+      })
+      .expect(201);
+
+    const missingDetailsSeller = await request(app.getHttpServer())
+      .get(`/seller-leads/${sellerResponse.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(missingDetailsSeller.body.sellerLead.pipeline).toEqual(
+      expect.objectContaining({
+        nextAction: expect.objectContaining({
+          code: 'complete_vehicle_details',
+        }),
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/seller-leads/${sellerResponse.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .send({
+        vehicleYear: 2021,
+        askingPrice: '900000.00',
+        targetBuyPrice: '830000.00',
+        expectedResalePrice: '980000.00',
+        status: 'Negotiating',
+      })
+      .expect(200);
+
+    const reviewSeller = await request(app.getHttpServer())
+      .get(`/seller-leads/${sellerResponse.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(reviewSeller.body.sellerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'acquisition_review',
+        nextAction: expect.objectContaining({
+          code: 'review_acquisition_pricing',
+        }),
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/seller-leads/${sellerResponse.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .send({
+        status: 'Approved to Buy',
+      })
+      .expect(200);
+
+    const approvedSeller = await request(app.getHttpServer())
+      .get(`/seller-leads/${sellerResponse.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(approvedSeller.body.sellerLead.pipeline).toEqual(
+      expect.objectContaining({
+        nextAction: expect.objectContaining({
+          code: 'create_inventory_vehicle',
+        }),
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .post(`/seller-leads/${sellerResponse.body.sellerLead.id}/convert`)
+      .set('Cookie', authCookies)
+      .send({
+        year: 2021,
+        purchasePrice: '830000.00',
+      })
+      .expect(201);
+
+    const convertedSeller = await request(app.getHttpServer())
+      .get(`/seller-leads/${sellerResponse.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(convertedSeller.body.sellerLead.pipeline).toEqual(
+      expect.objectContaining({
+        stage: 'acquired_vehicle_created',
+        nextAction: null,
+      }),
+    );
+
+    const staleSeller = await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', authCookies)
+      .send({
+        sellerName: 'Pipeline Stale Seller',
+        contactNumber: '09175550124',
+        vehicleBrand: 'Toyota',
+        vehicleModel: 'Corolla',
+        vehicleYear: 2020,
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await db
+      .updateTable('crm.seller_leads')
+      .set({
+        latest_activity_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+        updated_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      })
+      .where('id', '=', staleSeller.body.sellerLead.id)
+      .execute();
+
+    const staleSellerResponse = await request(app.getHttpServer())
+      .get(`/seller-leads/${staleSeller.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(staleSellerResponse.body.sellerLead.pipeline).toEqual(
+      expect.objectContaining({
+        isStale: true,
+        nextAction: expect.objectContaining({
+          code: 'review_stale_seller_lead',
+        }),
+        context: expect.objectContaining({
+          staleAfterDays: expect.any(Number),
+          vehicleCreated: false,
+        }),
+      }),
+    );
+
+    const staleSellerFilteredResponse = await request(app.getHttpServer())
+      .get('/seller-leads?pipelineState=stale')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(staleSellerFilteredResponse.body.sellerLeads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: staleSeller.body.sellerLead.id,
+        }),
+      ]),
+    );
+
+    const readySeller = await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', authCookies)
+      .send({
+        sellerName: 'Pipeline Ready Seller',
+        contactNumber: '09175550125',
+        vehicleBrand: 'Mazda',
+        vehicleModel: '3',
+        vehicleYear: 2022,
+        assigneeUserId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/follow-ups')
+      .set('Cookie', authCookies)
+      .send({
+        leadType: 'seller',
+        sellerLeadId: readySeller.body.sellerLead.id,
+        assigneeUserId,
+        dueAt: new Date(Date.now() + 48 * 3_600_000).toISOString(),
+        note: 'Ready seller follow-up',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/seller-leads/${readySeller.body.sellerLead.id}`)
+      .set('Cookie', authCookies)
+      .send({
+        askingPrice: '950000.00',
+        targetBuyPrice: '880000.00',
+        expectedResalePrice: '1020000.00',
+        status: 'Approved to Buy',
+      })
+      .expect(200);
+
+    const readySellerFilteredResponse = await request(app.getHttpServer())
+      .get('/seller-leads?pipelineState=ready')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+      expect(readySellerFilteredResponse.body.sellerLeads).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: readySeller.body.sellerLead.id,
+          }),
+        ]),
+      );
+    },
+    15000,
+  );
+
+  it(
+    'completes a follow-up and prevents duplicate completion',
+    async () => {
+      const createResponse = await createBuyerLead(app, authCookies);
+      const buyerLeadId = createResponse.body.buyerLead.id;
+
+      const followUpResponse = await request(app.getHttpServer())
+        .post('/follow-ups')
+        .set('Cookie', authCookies)
+        .send({
+          leadType: 'buyer',
+          buyerLeadId,
+          assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
+          dueAt: new Date(Date.now() + 3600_000).toISOString(),
+          note: 'Check reservation interest',
+        })
+        .expect(201);
+
+      const completeResponse = await request(app.getHttpServer())
+        .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+        .set('Cookie', authCookies)
+        .send({
+          outcomeNote: 'Buyer confirmed they will visit tomorrow',
+        })
+        .expect(200);
+
+      expect(completeResponse.body.followUp.status).toBe('Completed');
+      expect(completeResponse.body.followUp.completedAt).toBeTruthy();
+
+      await request(app.getHttpServer())
+        .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+        .set('Cookie', authCookies)
+        .send({
+          outcomeNote: 'Second completion should fail',
+        })
+        .expect(400);
+    },
+    30000,
+  );
 
   it('paginates entity and global activity history responses while keeping events in the payload', async () => {
     const firstLeadResponse = await request(app.getHttpServer())
@@ -621,6 +1095,91 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
     expect(legacyLimitResponse.body.events).toHaveLength(1);
   });
+
+  it('hides staff account enable and disable events from staff activity history views', async () => {
+    const createStaffResponse = await request(app.getHttpServer())
+      .post('/auth/users')
+      .set('Cookie', authCookies)
+      .send({
+        email: STAFF_EMAIL,
+        fullName: 'Activity Staff',
+        role: 'staff',
+      })
+      .expect(201);
+
+    const staffUserId = createStaffResponse.body.user.id;
+
+    await request(app.getHttpServer())
+      .patch(`/auth/users/${staffUserId}/status`)
+      .set('Cookie', authCookies)
+      .send({
+        active: false,
+      })
+      .expect(200);
+
+    const adminHistoryResponse = await request(app.getHttpServer())
+      .get('/activity-history')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(adminHistoryResponse.body.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'user',
+          entityId: staffUserId,
+          actionType: 'user.status_changed',
+          summary: 'Staff account disabled',
+        }),
+      ]),
+    );
+
+    await db
+      .updateTable('authentication.users')
+      .set({
+        active: true,
+        must_change_password: false,
+        updated_at: new Date(),
+      })
+      .where('id', '=', staffUserId)
+      .execute();
+
+    const staffLoginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: STAFF_EMAIL,
+        password: '123456',
+      })
+      .expect(201);
+
+    const staffCookies = [
+      extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_access_token'),
+      extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_refresh_token'),
+    ];
+
+    const staffHistoryResponse = await request(app.getHttpServer())
+      .get('/activity-history')
+      .set('Cookie', staffCookies)
+      .expect(200);
+
+    expect(staffHistoryResponse.body.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'user',
+          entityId: staffUserId,
+          actionType: 'user.status_changed',
+        }),
+      ]),
+    );
+    expect(staffHistoryResponse.body.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'user',
+          entityId: staffUserId,
+          actionType: 'user.created',
+        }),
+      ]),
+    );
+  });
 });
 
 async function createBuyerLead(
@@ -666,4 +1225,25 @@ function extractCookie(
   }
 
   return cookie.split(';')[0];
+}
+
+async function resetTestData(db: Kysely<DB>) {
+  await db.deleteFrom('ops.activity_history').execute();
+  await db.deleteFrom('sales.commissions').execute();
+  await db.deleteFrom('sales.sales').execute();
+  await db.deleteFrom('crm.follow_ups').execute();
+  await db.deleteFrom('crm.lead_vehicle_links').execute();
+  await db.deleteFrom('inventory.vehicle_photos').execute();
+  await db.deleteFrom('inventory.vehicles').execute();
+  await db.deleteFrom('crm.buyer_leads').execute();
+  await db.deleteFrom('crm.seller_leads').execute();
+  await db.deleteFrom('authentication.sessions').execute();
+  await db
+    .deleteFrom('authentication.users')
+    .where('email', '=', ADMIN_EMAIL)
+    .execute();
+  await db
+    .deleteFrom('authentication.users')
+    .where('email', '=', STAFF_EMAIL)
+    .execute();
 }

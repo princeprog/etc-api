@@ -20,6 +20,7 @@ const databaseProvider = {
       user,
       password,
       database,
+      ssl: parseSslConfig(),
     });
 
     return new Kysely<DB>({
@@ -36,6 +37,16 @@ function requireEnv(name: string): string {
   }
 
   return value;
+}
+
+function parseSslConfig() {
+  if (process.env.DB_SSL !== 'true') {
+    return false;
+  }
+
+  return {
+    rejectUnauthorized: false,
+  };
 }
 
 @Global()

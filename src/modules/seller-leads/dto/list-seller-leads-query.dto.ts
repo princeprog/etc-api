@@ -3,6 +3,7 @@ export class ListSellerLeadsQueryDto {
   pageSize?: number | string;
   search?: string;
   status?: string;
+  pipelineState?: string;
   sortBy?: string;
   sortOrder?: string;
 }
