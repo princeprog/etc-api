@@ -29,7 +29,9 @@ export class VehicleCatalogService {
 
     brandsQuery = this.applyListFilters(brandsQuery, options);
 
-    const brands = await brandsQuery.orderBy(sql`lower(name)`, 'asc').execute();
+    const brands = await brandsQuery
+      .orderBy(sql`lower(${sql.ref('inventory.vehicle_brands.name')})`, 'asc')
+      .execute();
     const items = await Promise.all(
       brands.map(async (brand) =>
         this.mapCatalogItem(brand, await this.countBrandUsage(brand.name)),
@@ -119,7 +121,9 @@ export class VehicleCatalogService {
       'inventory.vehicle_models',
     );
 
-    const models = await modelsQuery.orderBy(sql`lower(name)`, 'asc').execute();
+    const models = await modelsQuery
+      .orderBy(sql`lower(${sql.ref('inventory.vehicle_models.name')})`, 'asc')
+      .execute();
     const items = await Promise.all(
       models.map(async (model) =>
         this.mapCatalogItem(
@@ -227,7 +231,7 @@ export class VehicleCatalogService {
     );
 
     const variants = await variantsQuery
-      .orderBy(sql`lower(inventory.vehicle_variants.name)`, 'asc')
+      .orderBy(sql`lower(${sql.ref('inventory.vehicle_variants.name')})`, 'asc')
       .execute();
     const items = await Promise.all(
       variants.map(async (variant) =>
