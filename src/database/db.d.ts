@@ -550,6 +550,21 @@ export interface ExtensionsPgStatStatementsInfo {
   stats_reset: Timestamp | null;
 }
 
+export interface InventoryVehicleBrands {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface InventoryVehicleModels {
+  brand_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface InventoryVehiclePhotos {
   created_at: Generated<Timestamp>;
   file_url: string;
@@ -590,6 +605,14 @@ export interface InventoryVehicleTrackedCosts {
   note: string;
   updated_at: Generated<Timestamp>;
   vehicle_id: string;
+}
+
+export interface InventoryVehicleVariants {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  model_id: string;
+  name: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface OpsActivityHistory {
@@ -831,8 +854,11 @@ export interface DB {
   "crm.seller_leads": CrmSellerLeads;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
+  "inventory.vehicle_brands": InventoryVehicleBrands;
+  "inventory.vehicle_models": InventoryVehicleModels;
   "inventory.vehicle_photos": InventoryVehiclePhotos;
   "inventory.vehicle_tracked_costs": InventoryVehicleTrackedCosts;
+  "inventory.vehicle_variants": InventoryVehicleVariants;
   "inventory.vehicles": InventoryVehicles;
   "ops.activity_history": OpsActivityHistory;
   "realtime.messages": RealtimeMessages;

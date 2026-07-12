@@ -12,6 +12,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { ActivityHistoryModule } from './modules/activity-history/activity-history.module';
+import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ActivityHistoryModule } from './modules/activity-history/activity-histo
     ReportsModule,
     UploadsModule,
     ActivityHistoryModule,
+    VehicleCatalogModule,
   ],
   controllers: [AppController],
   providers: [AppService],
