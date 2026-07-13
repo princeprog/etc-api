@@ -3,6 +3,7 @@ import { Kysely } from 'kysely';
 
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
+import type { SellerLeadStatus } from '../../database/schema';
 import { centsToMoney } from '../sales/sales.helpers';
 import { evaluateVehicleQuality } from '../vehicles/vehicle-quality.helpers';
 import type {
@@ -30,18 +31,38 @@ const SEVERITY_RANK: Record<VehicleQualityIssueSeverity, number> = {
   info: 2,
 };
 
+const ACTIVE_SELLER_LEAD_STATUSES: SellerLeadStatus[] = [
+  'New Inquiry',
+  'Contacted',
+  'Inspection Scheduled',
+  'Evaluated',
+  'Negotiating',
+  'Approved to Buy',
+];
+
+type DashboardTrendPoint = {
+  label: string;
+  periodStart: string;
+  vehiclesAcquired: number;
+  vehiclesSold: number;
+};
+
 @Injectable()
 export class DashboardService {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
 
   async getDashboard() {
-    const [availableVehicles, reservedVehicles, soldVehicles, inventoryQuality] =
-      await Promise.all([
-        this.countVehiclesByStatus('Available'),
-        this.countVehiclesByStatus('Reserved'),
-        this.countVehiclesByStatus('Sold'),
-        this.getInventoryQualitySummary(),
-      ]);
+    const [
+      availableVehicles,
+      reservedVehicles,
+      soldVehicles,
+      inventoryQuality,
+    ] = await Promise.all([
+      this.countVehiclesByStatus('Available'),
+      this.countVehiclesByStatus('Reserved'),
+      this.countVehiclesByStatus('Sold'),
+      this.getInventoryQualitySummary(),
+    ]);
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -81,7 +102,13 @@ export class DashboardService {
       .orderBy('due_at', 'asc')
       .execute();
 
-    const [newSellerLeads, newBuyerLeads] = await Promise.all([
+    const [
+      newSellerLeads,
+      newBuyerLeads,
+      sellerLeadStatuses,
+      acquiredVehicleDates,
+      soldVehicleDates,
+    ] = await Promise.all([
       this.db
         .selectFrom('crm.seller_leads')
         .selectAll()
@@ -94,6 +121,21 @@ export class DashboardService {
         .where('status', '=', 'New Inquiry')
         .orderBy('created_at', 'desc')
         .execute(),
+      this.db
+        .selectFrom('crm.seller_leads')
+        .select(['status', 'inspection_completed_at'])
+        .where('status', 'in', ACTIVE_SELLER_LEAD_STATUSES)
+        .execute(),
+      this.db
+        .selectFrom('inventory.vehicles')
+        .select(['created_at'])
+        .where('created_at', '>=', this.getMonthStart(now, -11))
+        .execute(),
+      this.db
+        .selectFrom('sales.sales')
+        .select(['sale_date'])
+        .where('sale_date', '>=', this.getMonthStart(now, -11))
+        .execute(),
     ]);
 
     const monthlyRevenueCents = monthlySales.reduce(
@@ -105,8 +147,34 @@ export class DashboardService {
       0,
     );
 
+    const sellerLeadPipeline = ACTIVE_SELLER_LEAD_STATUSES.map((status) => ({
+      status,
+      count: sellerLeadStatuses.filter((lead) => lead.status === status).length,
+    }));
+    const activeSellerLeads = sellerLeadPipeline.reduce(
+      (sum, item) => sum + item.count,
+      0,
+    );
+    const inspectionsPending = sellerLeadStatuses.filter(
+      (lead) =>
+        lead.status === 'Inspection Scheduled' &&
+        lead.inspection_completed_at === null,
+    ).length;
+    const approvedLeadsAwaitingConversion = sellerLeadStatuses.filter(
+      (lead) => lead.status === 'Approved to Buy',
+    ).length;
+    const acquiredDates = acquiredVehicleDates.map(
+      (vehicle) => vehicle.created_at,
+    );
+    const soldDates = soldVehicleDates.map((sale) => sale.sale_date);
+
     return {
       metrics: {
+        activeInventory: inventoryQuality.totalActiveVehicles,
+        activeSellerLeads,
+        sellerLeadsRequiringAction: activeSellerLeads,
+        inspectionsPending,
+        approvedLeadsAwaitingConversion,
         availableVehicles,
         reservedVehicles,
         soldVehicles,
@@ -114,6 +182,14 @@ export class DashboardService {
         monthlyRevenue: centsToMoney(monthlyRevenueCents),
         monthlyProfit: centsToMoney(monthlyProfitCents),
         inventoryQuality,
+      },
+      analytics: {
+        acquisitionSalesTrend: {
+          twelveWeeks: this.buildWeeklyTrend(acquiredDates, soldDates, now, 12),
+          sixMonths: this.buildMonthlyTrend(acquiredDates, soldDates, now, 6),
+          oneYear: this.buildMonthlyTrend(acquiredDates, soldDates, now, 12),
+        },
+        sellerLeadPipeline,
       },
       queues: {
         overdueFollowUps: overdueFollowUps.map((followUp) => ({
@@ -300,6 +376,96 @@ export class DashboardService {
       .executeTakeFirstOrThrow();
 
     return Number(result.count);
+  }
+
+  private buildWeeklyTrend(
+    acquiredDates: Date[],
+    soldDates: Date[],
+    now: Date,
+    weeks: number,
+  ): DashboardTrendPoint[] {
+    const currentWeekStart = this.getWeekStart(now);
+
+    return Array.from({ length: weeks }, (_, index) => {
+      const offset = index - (weeks - 1);
+      const periodStart = new Date(currentWeekStart);
+      periodStart.setDate(periodStart.getDate() + offset * 7);
+      const periodEnd = new Date(periodStart);
+      periodEnd.setDate(periodEnd.getDate() + 7);
+
+      return this.createTrendPoint(
+        periodStart,
+        periodEnd,
+        acquiredDates,
+        soldDates,
+        new Intl.DateTimeFormat('en-US', {
+          month: 'short',
+          day: 'numeric',
+        }).format(periodStart),
+      );
+    });
+  }
+
+  private buildMonthlyTrend(
+    acquiredDates: Date[],
+    soldDates: Date[],
+    now: Date,
+    months: number,
+  ): DashboardTrendPoint[] {
+    return Array.from({ length: months }, (_, index) => {
+      const offset = index - (months - 1);
+      const periodStart = this.getMonthStart(now, offset);
+      const periodEnd = this.getMonthStart(now, offset + 1);
+
+      return this.createTrendPoint(
+        periodStart,
+        periodEnd,
+        acquiredDates,
+        soldDates,
+        new Intl.DateTimeFormat('en-US', { month: 'short' }).format(
+          periodStart,
+        ),
+      );
+    });
+  }
+
+  private createTrendPoint(
+    periodStart: Date,
+    periodEnd: Date,
+    acquiredDates: Date[],
+    soldDates: Date[],
+    label: string,
+  ): DashboardTrendPoint {
+    return {
+      label,
+      periodStart: periodStart.toISOString(),
+      vehiclesAcquired: this.countDatesInPeriod(
+        acquiredDates,
+        periodStart,
+        periodEnd,
+      ),
+      vehiclesSold: this.countDatesInPeriod(soldDates, periodStart, periodEnd),
+    };
+  }
+
+  private countDatesInPeriod(dates: Date[], start: Date, end: Date) {
+    return dates.filter((date) => date >= start && date < end).length;
+  }
+
+  private getWeekStart(value: Date) {
+    const start = new Date(
+      value.getFullYear(),
+      value.getMonth(),
+      value.getDate(),
+    );
+    const day = start.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    start.setDate(start.getDate() + mondayOffset);
+    return start;
+  }
+
+  private getMonthStart(value: Date, monthOffset: number) {
+    return new Date(value.getFullYear(), value.getMonth() + monthOffset, 1);
   }
 
   private moneyToCents(value: string | null) {

@@ -365,6 +365,11 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
 
     expect(response.body).toEqual({
       metrics: expect.objectContaining({
+        activeInventory: 2,
+        activeSellerLeads: 1,
+        sellerLeadsRequiringAction: 1,
+        inspectionsPending: 0,
+        approvedLeadsAwaitingConversion: 0,
         availableVehicles: 0,
         reservedVehicles: 1,
         soldVehicles: 1,
@@ -372,6 +377,26 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
         monthlyRevenue: '1280000.00',
         monthlyProfit: '180000.00',
       }),
+      analytics: {
+        acquisitionSalesTrend: {
+          twelveWeeks: expect.arrayContaining([
+            expect.objectContaining({
+              label: expect.any(String),
+              periodStart: expect.any(String),
+              vehiclesAcquired: expect.any(Number),
+              vehiclesSold: expect.any(Number),
+            }),
+          ]),
+          sixMonths: expect.any(Array),
+          oneYear: expect.any(Array),
+        },
+        sellerLeadPipeline: expect.arrayContaining([
+          {
+            status: 'New Inquiry',
+            count: 1,
+          },
+        ]),
+      },
       queues: expect.objectContaining({
         overdueFollowUps: expect.arrayContaining([
           expect.objectContaining({
