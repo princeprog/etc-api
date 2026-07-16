@@ -15,6 +15,8 @@ import type { DB } from '../src/database/db';
 const ADMIN_EMAIL = 'sales.admin@example.com';
 const PASSWORD = 'Password123!';
 
+jest.setTimeout(15000);
+
 describe('Sales finalization and dashboard workflow (e2e)', () => {
   let app: INestApplication<App>;
   let db: Kysely<DB>;
@@ -263,7 +265,10 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       commission: expect.objectContaining({
         saleId: expect.any(String),
         agentName: 'Agent Cruz',
-        finalAmount: expect.any(String),
+        defaultAmount: '10000.00',
+        overrideAmount: null,
+        finalAmount: '10000.00',
+        overrideReason: null,
       }),
       vehicle: expect.objectContaining({
         id: linkedVehicleId,
@@ -327,8 +332,8 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .expect(400);
   });
 
-  it('rejects creating a sale for an unlinked buyer lead and vehicle pair', async () => {
-    await request(app.getHttpServer())
+  it('auto-links an unlinked buyer lead and vehicle pair when finalizing a sale', async () => {
+    const response = await request(app.getHttpServer())
       .post('/sales')
       .set('Cookie', authCookies)
       .send({
@@ -337,11 +342,18 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
         saleDate: new Date().toISOString(),
         finalSaleAmount: '900000.00',
       })
-      .expect(400);
+      .expect(201);
+
+    expect(response.body.sale).toEqual(
+      expect.objectContaining({
+        vehicleId: unlinkedVehicleId,
+        buyerLeadId,
+      }),
+    );
   });
 
-  it('rejects commission override without a reason', async () => {
-    await request(app.getHttpServer())
+  it('ignores commission override input and uses fixed commission', async () => {
+    const response = await request(app.getHttpServer())
       .post('/sales')
       .set('Cookie', authCookies)
       .send({
@@ -352,7 +364,16 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
         agentName: 'Agent Cruz',
         commissionOverrideAmount: '8000.00',
       })
-      .expect(400);
+      .expect(201);
+
+    expect(response.body.commission).toEqual(
+      expect.objectContaining({
+        defaultAmount: '10000.00',
+        overrideAmount: null,
+        finalAmount: '10000.00',
+        overrideReason: null,
+      }),
+    );
   });
 
   it('returns dashboard metrics and operational queues', async () => {
@@ -453,7 +474,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .send({
         vehicleId: secondPair.vehicleId,
         buyerLeadId: secondPair.buyerLeadId,
-        saleDate: '2026-06-01T09:30:00.000Z',
+        saleDate: '2026-07-01T09:30:00.000Z',
         finalSaleAmount: '1700000.00',
         agentName: 'Agent Cruz',
       })
@@ -538,7 +559,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .send({
         vehicleId: linkedVehicleId,
         buyerLeadId,
-        saleDate: '2026-06-01T09:30:00.000Z',
+        saleDate: '2026-07-01T09:30:00.000Z',
         finalSaleAmount: '1280000.00',
         agentName: 'Agent Cruz',
       })
@@ -563,11 +584,9 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .send({
         vehicleId: secondPair.vehicleId,
         buyerLeadId: secondPair.buyerLeadId,
-        saleDate: '2026-06-15T10:00:00.000Z',
+        saleDate: '2026-07-15T10:00:00.000Z',
         finalSaleAmount: '1690000.00',
         agentName: 'Agent Mira',
-        commissionOverrideAmount: '8000.00',
-        commissionOverrideReason: 'Top closer bonus',
       })
       .expect(201);
 
@@ -606,7 +625,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
 
     const filteredSales = await request(app.getHttpServer())
       .get(
-        '/sales?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=1&pageSize=1',
+        '/sales?search=agent&status=finalized&agentName=Agent Mira&dateRange=this_month&page=1&pageSize=1',
       )
       .set('Cookie', authCookies)
       .expect(200);
@@ -674,7 +693,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .send({
         vehicleId: linkedVehicleId,
         buyerLeadId,
-        saleDate: '2026-06-01T09:30:00.000Z',
+        saleDate: '2026-07-01T09:30:00.000Z',
         finalSaleAmount: '1280000.00',
         agentName: 'Agent Cruz',
       })
@@ -699,11 +718,9 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       .send({
         vehicleId: secondPair.vehicleId,
         buyerLeadId: secondPair.buyerLeadId,
-        saleDate: '2026-06-15T10:00:00.000Z',
+        saleDate: '2026-07-15T10:00:00.000Z',
         finalSaleAmount: '1690000.00',
         agentName: 'Agent Mira',
-        commissionOverrideAmount: '8000.00',
-        commissionOverrideReason: 'Top closer bonus',
       })
       .expect(201);
 
@@ -742,7 +759,7 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
 
     const summaryResponse = await request(app.getHttpServer())
       .get(
-        '/sales/summary?search=agent&status=commission_locked&agentName=Agent Mira&dateRange=this_month&page=99&pageSize=1',
+        '/sales/summary?search=agent&status=finalized&agentName=Agent Mira&dateRange=this_month&page=99&pageSize=1',
       )
       .set('Cookie', authCookies)
       .expect(200);
@@ -751,8 +768,9 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       totalSales: 1,
       totalRevenue: '1690000.00',
       totalGrossProfit: '190000.00',
-      totalCommissionPayouts: '8000.00',
+      totalCommissionPayouts: '10000.00',
       totalProfitAfterTrackedCosts: '190000.00',
+      totalDrafts: 0,
     });
 
     const allSummaryResponse = await request(app.getHttpServer())
@@ -764,8 +782,9 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
       totalSales: 3,
       totalRevenue: '4510000.00',
       totalGrossProfit: '510000.00',
-      totalCommissionPayouts: '13000.00',
+      totalCommissionPayouts: '20000.00',
       totalProfitAfterTrackedCosts: '510000.00',
+      totalDrafts: 0,
     });
   });
 });

@@ -314,19 +314,7 @@ export class SalesService {
       'finalSaleAmount',
     );
     const agentName = normalizeOptionalTrimmed(input.agentName);
-    const overrideAmount = normalizeOptionalTrimmed(
-      input.commissionOverrideAmount,
-    );
-    const overrideReason = normalizeOptionalTrimmed(
-      input.commissionOverrideReason,
-    );
     const buyerClosingNote = normalizeOptionalTrimmed(input.buyerClosingNote);
-
-    if (overrideAmount && !overrideReason) {
-      throw new BadRequestException(
-        'commissionOverrideReason is required when commissionOverrideAmount is provided',
-      );
-    }
 
     const result = await this.db.transaction().execute(async (trx) => {
       const vehicle = await this.getVehicleOrThrow(vehicleId, trx);
@@ -381,7 +369,7 @@ export class SalesService {
         ? getDefaultCommissionAmount()
         : null;
       const finalCommissionAmount = agentName
-        ? (overrideAmount ?? defaultCommissionAmount ?? '0.00')
+        ? (defaultCommissionAmount ?? '0.00')
         : '0.00';
 
       const insertedSale = await trx
@@ -407,9 +395,9 @@ export class SalesService {
           sale_id: insertedSale.id,
           agent_name: agentName,
           default_amount: defaultCommissionAmount,
-          override_amount: overrideAmount,
+          override_amount: null,
           final_amount: finalCommissionAmount,
-          override_reason: overrideReason,
+          override_reason: null,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -489,23 +477,6 @@ export class SalesService {
         },
         trx,
       );
-
-      if (overrideAmount) {
-        await this.activityHistoryService.write(
-          {
-            actor: user,
-            entityType: 'sale',
-            entityId: insertedSale.id,
-            actionType: 'sale.commission_override_used',
-            summary: 'Commission override applied to finalized sale',
-            metadata: {
-              overrideAmount,
-              overrideReason,
-            },
-          },
-          trx,
-        );
-      }
 
       return {
         sale: insertedSale,

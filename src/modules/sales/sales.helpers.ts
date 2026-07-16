@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
-const DEFAULT_COMMISSION_AMOUNT = '5000.00';
+const DEFAULT_COMMISSION_AMOUNT = '10000.00';
 
 export function getDefaultCommissionAmount() {
   return DEFAULT_COMMISSION_AMOUNT;
