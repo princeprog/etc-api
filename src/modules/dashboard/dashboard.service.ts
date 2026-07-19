@@ -1,11 +1,22 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { Kysely } from 'kysely';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Kysely, sql } from 'kysely';
 
+import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
+import type {
+  BuyerLeadStatus,
+  SellerLeadStatus,
+  VehicleStatus,
+} from '../../database/schema';
 import { ExpenseReportsService } from '../expenses/expense-reports.service';
-import type { SellerLeadStatus } from '../../database/schema';
-import { centsToMoney } from '../sales/sales.helpers';
+import {
+  formatPeriodLabel,
+  normalizeMoney,
+  toPercentage,
+  type GroupByUnit,
+} from '../reports/reports.helpers';
+import { ReportsService } from '../reports/reports.service';
 import { evaluateVehicleQuality } from '../vehicles/vehicle-quality.helpers';
 import type {
   VehicleQualityGrade,
@@ -20,6 +31,69 @@ import type {
   VehiclePhotoInput,
   VehicleTrackedCostResponse,
 } from '../vehicles/vehicles.types';
+import type { DashboardQueryDto } from './dto/dashboard-query.dto';
+
+const DASHBOARD_RANGES = [
+  'this_month',
+  'last_30_days',
+  'last_90_days',
+  'year_to_date',
+] as const;
+
+type DashboardRange = (typeof DASHBOARD_RANGES)[number];
+
+type DashboardPeriod = {
+  key: DashboardRange;
+  label: string;
+  start: Date;
+  end: Date;
+  previousStart: Date;
+  previousEnd: Date;
+  groupBy: GroupByUnit;
+};
+
+type InventoryQualitySummary = {
+  averageScore: number;
+  totalActiveVehicles: number;
+  gradeCounts: Record<VehicleQualityGrade, number>;
+  topIssues: Array<{
+    code: string;
+    label: string;
+    severity: VehicleQualityIssueSeverity;
+    count: number;
+  }>;
+  lastEvaluatedAt: string;
+};
+
+type SharedInventory = {
+  active: number;
+  statuses: Record<Exclude<VehicleStatus, 'Sold'>, number>;
+  quality: InventoryQualitySummary;
+};
+
+const ACTIVE_SELLER_LEAD_STATUSES: SellerLeadStatus[] = [
+  'New Inquiry',
+  'Contacted',
+  'Inspection Scheduled',
+  'Evaluated',
+  'Negotiating',
+  'Approved to Buy',
+];
+
+const ACTIVE_BUYER_LEAD_STATUSES: BuyerLeadStatus[] = [
+  'New Inquiry',
+  'Contacted',
+  'Interested',
+  'Negotiating',
+  'Reserved',
+];
+
+const ACTIVE_INVENTORY_STATUSES: Exclude<VehicleStatus, 'Sold'>[] = [
+  'Incoming',
+  'Reconditioning',
+  'Available',
+  'Reserved',
+];
 
 const DASHBOARD_ISSUE_LABEL_OVERRIDES: Record<string, string> = {
   'freshness.stale_warning': 'Stale inventory (60+ days)',
@@ -32,210 +106,485 @@ const SEVERITY_RANK: Record<VehicleQualityIssueSeverity, number> = {
   info: 2,
 };
 
-const ACTIVE_SELLER_LEAD_STATUSES: SellerLeadStatus[] = [
-  'New Inquiry',
-  'Contacted',
-  'Inspection Scheduled',
-  'Evaluated',
-  'Negotiating',
-  'Approved to Buy',
-];
-
-type DashboardTrendPoint = {
-  label: string;
-  periodStart: string;
-  vehiclesAcquired: number;
-  vehiclesSold: number;
-};
-
 @Injectable()
 export class DashboardService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly expenseReportsService: ExpenseReportsService,
+    private readonly reportsService: ReportsService,
   ) {}
 
-  async getDashboard() {
-    const [
-      availableVehicles,
-      reservedVehicles,
-      soldVehicles,
-      inventoryQuality,
-      expenseSummary,
-    ] = await Promise.all([
-      this.countVehiclesByStatus('Available'),
-      this.countVehiclesByStatus('Reserved'),
-      this.countVehiclesByStatus('Sold'),
-      this.getInventoryQualitySummary(),
-      this.expenseReportsService.getDashboardSummary(),
+  async getDashboard(user: CurrentUser, query: DashboardQueryDto = {}) {
+    const period = this.resolvePeriod(query.range);
+    const assigneeUserId = user.role === 'staff' ? user.id : undefined;
+
+    const [inventoryQuality, inventoryStatuses, leadContext, followUpCounts] =
+      await Promise.all([
+        this.getInventoryQualitySummary(),
+        this.getInventoryStatusCounts(),
+        this.getLeadContext(assigneeUserId),
+        this.getFollowUpCounts(assigneeUserId),
+      ]);
+
+    const inventory = {
+      active: ACTIVE_INVENTORY_STATUSES.reduce(
+        (total, status) => total + inventoryStatuses[status],
+        0,
+      ),
+      statuses: inventoryStatuses,
+      quality: inventoryQuality,
+    };
+
+    if (user.role === 'admin') {
+      return this.buildAdminDashboard(
+        period,
+        inventory,
+        leadContext,
+        followUpCounts,
+      );
+    }
+
+    return this.buildStaffDashboard(
+      user,
+      period,
+      inventory,
+      leadContext,
+      followUpCounts,
+    );
+  }
+
+  private async buildAdminDashboard(
+    period: DashboardPeriod,
+    inventory: SharedInventory,
+    leadContext: Awaited<ReturnType<DashboardService['getLeadContext']>>,
+    followUpCounts: Awaited<ReturnType<DashboardService['getFollowUpCounts']>>,
+  ) {
+    const reportQuery = this.toReportQuery(period.start, period.end, period);
+    const previousReportQuery = this.toReportQuery(
+      period.previousStart,
+      period.previousEnd,
+      period,
+    );
+
+    const [overview, salesReport, previousOverview, expenseReport] =
+      await Promise.all([
+        this.reportsService.getOverview(reportQuery),
+        this.reportsService.getSalesReport(reportQuery),
+        this.reportsService.getOverview(previousReportQuery),
+        this.expenseReportsService.getMonthlyReport({
+          startDate: reportQuery.startDate,
+          endDate: reportQuery.endDate,
+        }),
+      ]);
+
+    return {
+      view: 'admin' as const,
+      period: this.describePeriod(period),
+      performance: {
+        totalSales: overview.sales.totalSales,
+        revenue: overview.sales.totalRevenue,
+        grossProfit: overview.sales.totalGrossProfit,
+        grossMarginPercent: overview.sales.grossMarginPercent,
+        averageSaleValue: overview.sales.averageSaleValue,
+        expenses: expenseReport.summary,
+        comparison: {
+          salesPercent: this.percentageChange(
+            overview.sales.totalSales,
+            previousOverview.sales.totalSales,
+          ),
+          revenuePercent: this.percentageChange(
+            Number(overview.sales.totalRevenue),
+            Number(previousOverview.sales.totalRevenue),
+          ),
+          grossProfitPercent: this.percentageChange(
+            Number(overview.sales.totalGrossProfit),
+            Number(previousOverview.sales.totalGrossProfit),
+          ),
+        },
+      },
+      inventory: {
+        ...inventory,
+        totalInventoryValue: overview.inventory.totalInventoryValue,
+      },
+      leads: {
+        health: overview.leads,
+        sellerPipeline: leadContext.sellerPipeline,
+        buyerPipeline: leadContext.buyerPipeline,
+      },
+      attention: {
+        overdueFollowUps: followUpCounts.overdue,
+        dueTodayFollowUps: followUpCounts.dueToday,
+        pendingInspections: leadContext.pendingInspections,
+        approvedSellerLeads: leadContext.approvedSellerLeads,
+        incompleteListings: inventory.quality.gradeCounts.incomplete,
+        overdueExpenses: expenseReport.summary.overdueCount,
+      },
+      trend: salesReport.trend,
+    };
+  }
+
+  private async buildStaffDashboard(
+    user: CurrentUser,
+    period: DashboardPeriod,
+    inventory: SharedInventory,
+    leadContext: Awaited<ReturnType<DashboardService['getLeadContext']>>,
+    followUpCounts: Awaited<ReturnType<DashboardService['getFollowUpCounts']>>,
+  ) {
+    const [sales, priorityQueue] = await Promise.all([
+      this.getPersonalSales(user.id, period),
+      this.getPriorityQueue(user.id),
     ]);
 
+    const activeSellerLeads = leadContext.sellerPipeline.reduce(
+      (total, item) => total + item.count,
+      0,
+    );
+    const activeBuyerLeads = leadContext.buyerPipeline.reduce(
+      (total, item) => total + item.count,
+      0,
+    );
+
+    return {
+      view: 'staff' as const,
+      period: this.describePeriod(period),
+      assignments: {
+        openLeads: activeSellerLeads + activeBuyerLeads,
+        activeSellerLeads,
+        activeBuyerLeads,
+        dueTodayFollowUps: followUpCounts.dueToday,
+        overdueFollowUps: followUpCounts.overdue,
+        pendingInspections: leadContext.pendingInspections,
+      },
+      personalPerformance: sales,
+      inventory,
+      pipelines: {
+        seller: leadContext.sellerPipeline,
+        buyer: leadContext.buyerPipeline,
+      },
+      priorityQueue,
+    };
+  }
+
+  private resolvePeriod(value?: string): DashboardPeriod {
+    const range = (value?.trim() || 'this_month') as DashboardRange;
+
+    if (!DASHBOARD_RANGES.includes(range)) {
+      throw new BadRequestException(
+        `range must be one of: ${DASHBOARD_RANGES.join(', ')}`,
+      );
+    }
+
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const todayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const tomorrowStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 1,
-    );
+    const end = new Date(now);
+    let start: Date;
+    let label: string;
+    let groupBy: GroupByUnit;
 
-    const monthlySales = await this.db
-      .selectFrom('sales.sales')
-      .select(['id', 'final_sale_amount', 'gross_profit_amount'])
-      .where('sale_date', '>=', monthStart)
-      .where('sale_date', '<', nextMonthStart)
+    switch (range) {
+      case 'last_30_days':
+        start = this.startOfDay(now);
+        start.setDate(start.getDate() - 29);
+        label = 'Last 30 days';
+        groupBy = 'day';
+        break;
+      case 'last_90_days':
+        start = this.startOfDay(now);
+        start.setDate(start.getDate() - 89);
+        label = 'Last 90 days';
+        groupBy = 'week';
+        break;
+      case 'year_to_date':
+        start = new Date(now.getFullYear(), 0, 1);
+        label = 'Year to date';
+        groupBy = 'month';
+        break;
+      case 'this_month':
+      default:
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        label = 'This month';
+        groupBy = 'day';
+        break;
+    }
+
+    const duration = end.getTime() - start.getTime();
+    const previousEnd = new Date(start.getTime() - 1);
+    const previousStart = new Date(previousEnd.getTime() - duration);
+
+    return {
+      key: range,
+      label,
+      start,
+      end,
+      previousStart,
+      previousEnd,
+      groupBy,
+    };
+  }
+
+  private describePeriod(period: DashboardPeriod) {
+    return {
+      key: period.key,
+      label: period.label,
+      startDate: period.start.toISOString(),
+      endDate: period.end.toISOString(),
+      groupBy: period.groupBy,
+    };
+  }
+
+  private toReportQuery(start: Date, end: Date, period: DashboardPeriod) {
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      groupBy: period.groupBy,
+    };
+  }
+
+  private async getInventoryStatusCounts() {
+    const rows = await this.db
+      .selectFrom('inventory.vehicles')
+      .select(['status'])
+      .select(({ fn }) => fn.count<string>('id').as('count'))
+      .where('status', 'in', ACTIVE_INVENTORY_STATUSES)
+      .groupBy('status')
       .execute();
 
-    const overdueFollowUps = await this.db
-      .selectFrom('crm.follow_ups')
-      .selectAll()
-      .where('completed_at', 'is', null)
-      .where('due_at', '<', now)
-      .orderBy('due_at', 'asc')
-      .execute();
+    const counts: Record<Exclude<VehicleStatus, 'Sold'>, number> = {
+      Incoming: 0,
+      Reconditioning: 0,
+      Available: 0,
+      Reserved: 0,
+    };
 
-    const dueTodayFollowUps = await this.db
-      .selectFrom('crm.follow_ups')
-      .selectAll()
-      .where('completed_at', 'is', null)
-      .where('due_at', '>=', todayStart)
-      .where('due_at', '<', tomorrowStart)
-      .orderBy('due_at', 'asc')
-      .execute();
+    for (const row of rows) {
+      const status = parseVehicleStatus(row.status, 'Incoming');
+      if (status !== 'Sold') {
+        counts[status] = Number(row.count);
+      }
+    }
 
-    const [
-      newSellerLeads,
-      newBuyerLeads,
-      sellerLeadStatuses,
-      acquiredVehicleDates,
-      soldVehicleDates,
-    ] = await Promise.all([
-      this.db
-        .selectFrom('crm.seller_leads')
-        .selectAll()
-        .where('status', '=', 'New Inquiry')
-        .orderBy('created_at', 'desc')
-        .execute(),
-      this.db
-        .selectFrom('crm.buyer_leads')
-        .selectAll()
-        .where('status', '=', 'New Inquiry')
-        .orderBy('created_at', 'desc')
-        .execute(),
+    return counts;
+  }
+
+  private async getLeadContext(assigneeUserId?: string) {
+    const [sellerRows, buyerRows] = await Promise.all([
       this.db
         .selectFrom('crm.seller_leads')
         .select(['status', 'inspection_completed_at'])
         .where('status', 'in', ACTIVE_SELLER_LEAD_STATUSES)
+        .$if(Boolean(assigneeUserId), (builder) =>
+          builder.where('assignee_user_id', '=', assigneeUserId!),
+        )
         .execute(),
       this.db
-        .selectFrom('inventory.vehicles')
-        .select(['created_at'])
-        .where('created_at', '>=', this.getMonthStart(now, -11))
-        .execute(),
-      this.db
-        .selectFrom('sales.sales')
-        .select(['sale_date'])
-        .where('sale_date', '>=', this.getMonthStart(now, -11))
+        .selectFrom('crm.buyer_leads')
+        .select(['status'])
+        .where('status', 'in', ACTIVE_BUYER_LEAD_STATUSES)
+        .$if(Boolean(assigneeUserId), (builder) =>
+          builder.where('assignee_user_id', '=', assigneeUserId!),
+        )
         .execute(),
     ]);
 
-    const monthlyRevenueCents = monthlySales.reduce(
-      (sum, sale) => sum + this.moneyToCents(sale.final_sale_amount),
-      0,
-    );
-    const monthlyProfitCents = monthlySales.reduce(
-      (sum, sale) => sum + this.moneyToCents(sale.gross_profit_amount),
-      0,
-    );
+    return {
+      sellerPipeline: ACTIVE_SELLER_LEAD_STATUSES.map((status) => ({
+        status,
+        count: sellerRows.filter((lead) => lead.status === status).length,
+      })),
+      buyerPipeline: ACTIVE_BUYER_LEAD_STATUSES.map((status) => ({
+        status,
+        count: buyerRows.filter((lead) => lead.status === status).length,
+      })),
+      pendingInspections: sellerRows.filter(
+        (lead) =>
+          lead.status === 'Inspection Scheduled' &&
+          lead.inspection_completed_at === null,
+      ).length,
+      approvedSellerLeads: sellerRows.filter(
+        (lead) => lead.status === 'Approved to Buy',
+      ).length,
+    };
+  }
 
-    const sellerLeadPipeline = ACTIVE_SELLER_LEAD_STATUSES.map((status) => ({
-      status,
-      count: sellerLeadStatuses.filter((lead) => lead.status === status).length,
-    }));
-    const activeSellerLeads = sellerLeadPipeline.reduce(
-      (sum, item) => sum + item.count,
-      0,
-    );
-    const inspectionsPending = sellerLeadStatuses.filter(
-      (lead) =>
-        lead.status === 'Inspection Scheduled' &&
-        lead.inspection_completed_at === null,
-    ).length;
-    const approvedLeadsAwaitingConversion = sellerLeadStatuses.filter(
-      (lead) => lead.status === 'Approved to Buy',
-    ).length;
-    const acquiredDates = acquiredVehicleDates.map(
-      (vehicle) => vehicle.created_at,
-    );
-    const soldDates = soldVehicleDates.map((sale) => sale.sale_date);
+  private async getFollowUpCounts(assigneeUserId?: string) {
+    const now = new Date();
+    const todayStart = this.startOfDay(now);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+
+    const scoped = () =>
+      this.db
+        .selectFrom('crm.follow_ups')
+        .where('completed_at', 'is', null)
+        .$if(Boolean(assigneeUserId), (builder) =>
+          builder.where('assignee_user_id', '=', assigneeUserId!),
+        );
+
+    const [overdue, dueToday] = await Promise.all([
+      scoped()
+        .where('due_at', '<', now)
+        .select(({ fn }) => fn.count<string>('id').as('count'))
+        .executeTakeFirstOrThrow(),
+      scoped()
+        .where('due_at', '>=', todayStart)
+        .where('due_at', '<', tomorrowStart)
+        .select(({ fn }) => fn.count<string>('id').as('count'))
+        .executeTakeFirstOrThrow(),
+    ]);
 
     return {
-      metrics: {
-        activeInventory: inventoryQuality.totalActiveVehicles,
-        activeSellerLeads,
-        sellerLeadsRequiringAction: activeSellerLeads,
-        inspectionsPending,
-        approvedLeadsAwaitingConversion,
-        availableVehicles,
-        reservedVehicles,
-        soldVehicles,
-        monthlySales: monthlySales.length,
-        monthlyRevenue: centsToMoney(monthlyRevenueCents),
-        monthlyProfit: centsToMoney(monthlyProfitCents),
-        inventoryQuality,
-        expenses: expenseSummary,
-      },
-      analytics: {
-        acquisitionSalesTrend: {
-          twelveWeeks: this.buildWeeklyTrend(acquiredDates, soldDates, now, 12),
-          sixMonths: this.buildMonthlyTrend(acquiredDates, soldDates, now, 6),
-          oneYear: this.buildMonthlyTrend(acquiredDates, soldDates, now, 12),
-        },
-        sellerLeadPipeline,
-      },
-      queues: {
-        overdueFollowUps: overdueFollowUps.map((followUp) => ({
-          id: followUp.id,
-          leadType: followUp.lead_type,
-          sellerLeadId: followUp.seller_lead_id,
-          buyerLeadId: followUp.buyer_lead_id,
-          assigneeUserId: followUp.assignee_user_id,
-          dueAt: followUp.due_at,
-          status: 'Overdue',
-          note: followUp.note,
-        })),
-        dueTodayFollowUps: dueTodayFollowUps.map((followUp) => ({
-          id: followUp.id,
-          leadType: followUp.lead_type,
-          sellerLeadId: followUp.seller_lead_id,
-          buyerLeadId: followUp.buyer_lead_id,
-          assigneeUserId: followUp.assignee_user_id,
-          dueAt: followUp.due_at,
-          status: 'Due',
-          note: followUp.note,
-        })),
-        newSellerLeads: newSellerLeads.map((lead) => ({
-          id: lead.id,
-          sellerName: lead.seller_name,
-          vehicleBrand: lead.vehicle_brand,
-          vehicleModel: lead.vehicle_model,
-          status: lead.status,
-          createdAt: lead.created_at,
-        })),
-        newBuyerLeads: newBuyerLeads.map((lead) => ({
-          id: lead.id,
-          buyerName: lead.buyer_name,
-          contactNumber: lead.contact_number,
-          status: lead.status,
-          createdAt: lead.created_at,
-        })),
-      },
+      overdue: Number(overdue.count),
+      dueToday: Number(dueToday.count),
     };
+  }
+
+  private async getPersonalSales(userId: string, period: DashboardPeriod) {
+    const [current, previous, trend] = await Promise.all([
+      this.getPersonalSalesSummary(userId, period.start, period.end),
+      this.getPersonalSalesSummary(
+        userId,
+        period.previousStart,
+        period.previousEnd,
+      ),
+      this.getPersonalSalesTrend(userId, period),
+    ]);
+
+    return {
+      ...current,
+      comparisonPercent: this.percentageChange(
+        current.totalSales,
+        previous.totalSales,
+      ),
+      trend,
+    };
+  }
+
+  private async getPersonalSalesSummary(
+    userId: string,
+    start: Date,
+    end: Date,
+  ) {
+    const row = await this.db
+      .selectFrom('sales.sales')
+      .where('created_by_user_id', '=', userId)
+      .where('sale_date', '>=', start)
+      .where('sale_date', '<=', end)
+      .select(({ fn }) => [
+        fn.count<string>('id').as('totalSales'),
+        sql<string>`coalesce(sum(final_sale_amount::numeric), 0)::text`.as(
+          'revenue',
+        ),
+        sql<string>`coalesce(sum(gross_profit_amount::numeric), 0)::text`.as(
+          'grossProfit',
+        ),
+      ])
+      .executeTakeFirstOrThrow();
+
+    const totalSales = Number(row.totalSales);
+    const revenue = normalizeMoney(row.revenue);
+
+    return {
+      totalSales,
+      revenue,
+      grossProfit: normalizeMoney(row.grossProfit),
+      averageSaleValue: normalizeMoney(
+        totalSales === 0 ? 0 : Number(revenue) / totalSales,
+      ),
+    };
+  }
+
+  private async getPersonalSalesTrend(userId: string, period: DashboardPeriod) {
+    const periodExpression = sql<string>`to_char(date_trunc(${sql.lit(period.groupBy)}, sale_date), 'YYYY-MM-DD')`;
+    const rows = await this.db
+      .selectFrom('sales.sales')
+      .where('created_by_user_id', '=', userId)
+      .where('sale_date', '>=', period.start)
+      .where('sale_date', '<=', period.end)
+      .select(() => [
+        periodExpression.as('period'),
+        sql<string>`count(*)`.as('salesCount'),
+        sql<string>`coalesce(sum(final_sale_amount::numeric), 0)::text`.as(
+          'revenue',
+        ),
+        sql<string>`coalesce(sum(gross_profit_amount::numeric), 0)::text`.as(
+          'grossProfit',
+        ),
+      ])
+      .groupBy(periodExpression)
+      .orderBy(periodExpression)
+      .execute();
+
+    return rows.map((row) => ({
+      period: row.period,
+      periodLabel: formatPeriodLabel(row.period, period.groupBy),
+      salesCount: Number(row.salesCount),
+      revenue: normalizeMoney(row.revenue),
+      grossProfit: normalizeMoney(row.grossProfit),
+    }));
+  }
+
+  private async getPriorityQueue(userId: string) {
+    const now = new Date();
+    const todayStart = this.startOfDay(now);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const horizon = new Date(now);
+    horizon.setDate(horizon.getDate() + 7);
+
+    const rows = await this.db
+      .selectFrom('crm.follow_ups as follow_up')
+      .leftJoin(
+        'crm.seller_leads as seller_lead',
+        'seller_lead.id',
+        'follow_up.seller_lead_id',
+      )
+      .leftJoin(
+        'crm.buyer_leads as buyer_lead',
+        'buyer_lead.id',
+        'follow_up.buyer_lead_id',
+      )
+      .where('follow_up.assignee_user_id', '=', userId)
+      .where('follow_up.completed_at', 'is', null)
+      .where('follow_up.due_at', '<=', horizon)
+      .select([
+        'follow_up.id',
+        'follow_up.lead_type',
+        'follow_up.seller_lead_id',
+        'follow_up.buyer_lead_id',
+        'follow_up.due_at',
+        'follow_up.note',
+        'seller_lead.seller_name',
+        'seller_lead.vehicle_brand',
+        'seller_lead.vehicle_model',
+        'buyer_lead.buyer_name',
+        'buyer_lead.contact_number',
+      ])
+      .orderBy('follow_up.due_at', 'asc')
+      .limit(6)
+      .execute();
+
+    return rows.map((row) => ({
+      id: row.id,
+      leadType: row.lead_type,
+      leadId:
+        row.lead_type === 'seller' ? row.seller_lead_id : row.buyer_lead_id,
+      leadName:
+        row.lead_type === 'seller'
+          ? (row.seller_name ?? 'Seller lead')
+          : (row.buyer_name ?? 'Buyer lead'),
+      leadSecondary:
+        row.lead_type === 'seller'
+          ? [row.vehicle_brand, row.vehicle_model].filter(Boolean).join(' ') ||
+            null
+          : row.contact_number,
+      dueAt: row.due_at,
+      note: row.note,
+      urgency:
+        row.due_at < now
+          ? ('overdue' as const)
+          : row.due_at >= todayStart && row.due_at < tomorrowStart
+            ? ('today' as const)
+            : ('upcoming' as const),
+    }));
   }
 
   private async getInventoryQualitySummary() {
@@ -373,114 +722,15 @@ export class DashboardService {
     };
   }
 
-  private async countVehiclesByStatus(
-    status: 'Available' | 'Reserved' | 'Sold',
-  ) {
-    const result = await this.db
-      .selectFrom('inventory.vehicles')
-      .select(({ fn }) => fn.count<string>('id').as('count'))
-      .where('status', '=', status)
-      .executeTakeFirstOrThrow();
-
-    return Number(result.count);
-  }
-
-  private buildWeeklyTrend(
-    acquiredDates: Date[],
-    soldDates: Date[],
-    now: Date,
-    weeks: number,
-  ): DashboardTrendPoint[] {
-    const currentWeekStart = this.getWeekStart(now);
-
-    return Array.from({ length: weeks }, (_, index) => {
-      const offset = index - (weeks - 1);
-      const periodStart = new Date(currentWeekStart);
-      periodStart.setDate(periodStart.getDate() + offset * 7);
-      const periodEnd = new Date(periodStart);
-      periodEnd.setDate(periodEnd.getDate() + 7);
-
-      return this.createTrendPoint(
-        periodStart,
-        periodEnd,
-        acquiredDates,
-        soldDates,
-        new Intl.DateTimeFormat('en-US', {
-          month: 'short',
-          day: 'numeric',
-        }).format(periodStart),
-      );
-    });
-  }
-
-  private buildMonthlyTrend(
-    acquiredDates: Date[],
-    soldDates: Date[],
-    now: Date,
-    months: number,
-  ): DashboardTrendPoint[] {
-    return Array.from({ length: months }, (_, index) => {
-      const offset = index - (months - 1);
-      const periodStart = this.getMonthStart(now, offset);
-      const periodEnd = this.getMonthStart(now, offset + 1);
-
-      return this.createTrendPoint(
-        periodStart,
-        periodEnd,
-        acquiredDates,
-        soldDates,
-        new Intl.DateTimeFormat('en-US', { month: 'short' }).format(
-          periodStart,
-        ),
-      );
-    });
-  }
-
-  private createTrendPoint(
-    periodStart: Date,
-    periodEnd: Date,
-    acquiredDates: Date[],
-    soldDates: Date[],
-    label: string,
-  ): DashboardTrendPoint {
-    return {
-      label,
-      periodStart: periodStart.toISOString(),
-      vehiclesAcquired: this.countDatesInPeriod(
-        acquiredDates,
-        periodStart,
-        periodEnd,
-      ),
-      vehiclesSold: this.countDatesInPeriod(soldDates, periodStart, periodEnd),
-    };
-  }
-
-  private countDatesInPeriod(dates: Date[], start: Date, end: Date) {
-    return dates.filter((date) => date >= start && date < end).length;
-  }
-
-  private getWeekStart(value: Date) {
-    const start = new Date(
-      value.getFullYear(),
-      value.getMonth(),
-      value.getDate(),
-    );
-    const day = start.getDay();
-    const mondayOffset = day === 0 ? -6 : 1 - day;
-    start.setDate(start.getDate() + mondayOffset);
-    return start;
-  }
-
-  private getMonthStart(value: Date, monthOffset: number) {
-    return new Date(value.getFullYear(), value.getMonth() + monthOffset, 1);
-  }
-
-  private moneyToCents(value: string | null) {
-    if (!value) {
-      return 0;
+  private percentageChange(current: number, previous: number) {
+    if (previous === 0) {
+      return current === 0 ? '0.0' : null;
     }
 
-    const [wholePart, decimalPart = ''] = value.split('.');
-    return Number(wholePart) * 100 + Number(decimalPart.padEnd(2, '0'));
+    return toPercentage(current - previous, previous);
+  }
+
+  private startOfDay(value: Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
   }
 }

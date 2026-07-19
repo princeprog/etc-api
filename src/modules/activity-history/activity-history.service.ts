@@ -38,7 +38,9 @@ const ACTIVITY_DATE_RANGES = [
   'today',
   'last_7_days',
   'last_30_days',
+  'last_90_days',
   'this_month',
+  'year_to_date',
 ] as const;
 
 type ActivityDateRange = (typeof ACTIVITY_DATE_RANGES)[number];
@@ -48,6 +50,7 @@ type ActivityHistoryFilters = {
   entityType?: ActivityEntityType;
   actionType?: string;
   actor?: string;
+  actorUserId?: string;
   dateRange: ActivityDateRange;
 };
 
@@ -249,11 +252,11 @@ export class ActivityHistoryService {
     let query = this.db.selectFrom('ops.activity_history');
 
     if (currentUser.role === 'staff') {
-      query = query.where(({ not, and, eb }) =>
-        not(
-          and([
-            eb('entity_type', '=', 'user'),
-            eb('action_type', '=', 'user.status_changed'),
+      query = query.where((expressionBuilder) =>
+        expressionBuilder.not(
+          expressionBuilder.and([
+            expressionBuilder('entity_type', '=', 'user'),
+            expressionBuilder('action_type', '=', 'user.status_changed'),
           ]),
         ),
       );
@@ -285,6 +288,7 @@ export class ActivityHistoryService {
       entityType: this.parseOptionalEntityType(query.entityType),
       actionType: this.parseOptionalText(query.actionType),
       actor: this.parseOptionalText(query.actor),
+      actorUserId: this.parseOptionalText(query.actorUserId),
       dateRange: this.parseDateRange(query.dateRange),
     };
   }
@@ -335,6 +339,10 @@ export class ActivityHistoryService {
       );
     }
 
+    if (filters.actorUserId) {
+      query = query.where('actor_user_id', '=', filters.actorUserId);
+    }
+
     return this.applyDateRangeFilter(query, filters.dateRange);
   }
 
@@ -349,11 +357,19 @@ export class ActivityHistoryService {
         return builder.where('created_at', '>=', this.daysAgo(7));
       case 'last_30_days':
         return builder.where('created_at', '>=', this.daysAgo(30));
+      case 'last_90_days':
+        return builder.where('created_at', '>=', this.daysAgo(90));
       case 'this_month':
         return builder.where(
           'created_at',
           '>=',
           sql<Date>`date_trunc('month', now())`,
+        );
+      case 'year_to_date':
+        return builder.where(
+          'created_at',
+          '>=',
+          sql<Date>`date_trunc('year', now())`,
         );
       case 'all':
       default:

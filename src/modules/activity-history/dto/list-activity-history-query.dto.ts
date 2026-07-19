@@ -6,5 +6,6 @@ export class ListActivityHistoryQueryDto {
   entityType?: string;
   actionType?: string;
   actor?: string;
+  actorUserId?: string;
   dateRange?: string;
 }
