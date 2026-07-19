@@ -10,8 +10,15 @@ export interface StoredFile {
   mimeType: string;
   size: number;
   relativePath: string;
+  url?: string;
+  publicId?: string;
+  width?: number;
+  height?: number;
+  format?: string;
+  optimizedUrl?: string;
 }
 
 export interface FileStorage {
   saveUserFile(input: FileStorageSaveInput): Promise<StoredFile>;
+  deleteFiles?(relativePathsOrUrls: string[]): Promise<void>;
 }

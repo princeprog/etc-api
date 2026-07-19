@@ -12,7 +12,7 @@ import {
   parsePagination,
 } from '../../common/utils/list-query.utils';
 import type { CurrentUser } from '../../common/types/auth.types';
-import { LocalFileStorageService } from '../../common/storage/local-file-storage.service';
+import { VehiclePhotoStorageService } from '../../common/storage/vehicle-photo-storage.service';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { VehicleStatus } from '../../database/schema';
@@ -44,7 +44,7 @@ import { centsToMoney, parseMoneyToCents } from '../sales/sales.helpers';
 export class VehiclesService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
-    private readonly localFileStorageService: LocalFileStorageService,
+    private readonly vehiclePhotoStorageService: VehiclePhotoStorageService,
     private readonly activityHistoryService: ActivityHistoryService,
   ) {}
 
@@ -296,7 +296,7 @@ export class VehiclesService {
     });
 
     if (removedPhotoPaths.length > 0) {
-      await this.localFileStorageService.deleteFiles(removedPhotoPaths);
+      await this.vehiclePhotoStorageService.deleteFiles(removedPhotoPaths);
     }
 
     return { vehicle };

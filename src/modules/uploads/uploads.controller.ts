@@ -12,7 +12,7 @@ import type { Request } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
-import { LocalFileStorageService } from '../../common/storage/local-file-storage.service';
+import { VehiclePhotoStorageService } from '../../common/storage/vehicle-photo-storage.service';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -28,7 +28,7 @@ interface UploadedImageFile {
 @UseGuards(AccessTokenGuard)
 export class UploadsController {
   constructor(
-    private readonly localFileStorageService: LocalFileStorageService,
+    private readonly vehiclePhotoStorageService: VehiclePhotoStorageService,
   ) {}
 
   @Post('vehicle-photos')
@@ -54,7 +54,7 @@ export class UploadsController {
       );
     }
 
-    const storedFile = await this.localFileStorageService.saveUserFile({
+    const storedFile = await this.vehiclePhotoStorageService.saveUserFile({
       userId: user.id,
       buffer: file.buffer,
       mimeType: file.mimetype,
@@ -64,10 +64,17 @@ export class UploadsController {
     return {
       file: {
         path: storedFile.relativePath,
-        url: `${request.protocol}://${request.get('host')}${storedFile.relativePath}`,
+        url:
+          storedFile.url ??
+          `${request.protocol}://${request.get('host')}${storedFile.relativePath}`,
         filename: storedFile.filename,
         mimeType: storedFile.mimeType,
         size: storedFile.size,
+        publicId: storedFile.publicId,
+        width: storedFile.width,
+        height: storedFile.height,
+        format: storedFile.format,
+        optimizedUrl: storedFile.optimizedUrl,
       },
     };
   }
