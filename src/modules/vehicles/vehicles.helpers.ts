@@ -122,9 +122,12 @@ export function normalizeTrackedCostNote(
 
 export function validateVehicleAvailability(
   model: VehicleWriteModel,
-  options: { requireAvailableReadiness?: boolean } = {},
+  options: {
+    allowSoldStatus?: boolean;
+    requireAvailableReadiness?: boolean;
+  } = {},
 ): void {
-  if (model.status === 'Sold') {
+  if (model.status === 'Sold' && !options.allowSoldStatus) {
     throw new BadRequestException(
       'Vehicles can only move to Sold through the sales finalization workflow',
     );

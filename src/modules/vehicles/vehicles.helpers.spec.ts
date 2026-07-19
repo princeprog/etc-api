@@ -61,4 +61,19 @@ describe('validateVehicleAvailability', () => {
       ),
     ).toThrow('Vehicles can only move to Sold');
   });
+
+  it('allows edits to an already Sold vehicle when no Sold transition is requested', () => {
+    expect(() =>
+      validateVehicleAvailability(
+        buildVehicleWriteModel({
+          status: 'Sold',
+          photos: [
+            { fileUrl: '/uploads/vehicles/test.jpg', sortOrder: 0 },
+            { fileUrl: '/uploads/vehicles/after-sale.jpg', sortOrder: 1 },
+          ],
+        }),
+        { allowSoldStatus: true, requireAvailableReadiness: false },
+      ),
+    ).not.toThrow();
+  });
 });

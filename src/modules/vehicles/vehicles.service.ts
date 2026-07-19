@@ -252,6 +252,9 @@ export class VehiclesService {
         updateVehicleDto.status ??
         parseVehicleStatus(existingVehicle.status, 'Incoming'),
       photos: updateVehicleDto.photos ?? existingPhotos,
+      allowSoldStatus:
+        updateVehicleDto.status === undefined &&
+        existingVehicle.status === 'Sold',
       validateAvailableReadiness: updateVehicleDto.status !== undefined,
     });
     const removedPhotoPaths = this.getRemovedPhotoPaths(
@@ -384,6 +387,7 @@ export class VehiclesService {
     sellerLeadId?: string | null;
     status?: VehicleStatus;
     photos?: VehiclePhotoInput[];
+    allowSoldStatus?: boolean;
     validateAvailableReadiness?: boolean;
   }): VehicleWriteModel {
     const stockNumber = input.stockNumber?.trim();
@@ -425,6 +429,7 @@ export class VehiclesService {
     };
 
     validateVehicleAvailability(normalized, {
+      allowSoldStatus: input.allowSoldStatus,
       requireAvailableReadiness: input.validateAvailableReadiness,
     });
     return normalized;
