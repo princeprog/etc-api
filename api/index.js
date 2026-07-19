@@ -1,5 +1,3 @@
-require('dotenv/config');
-
 const { NestFactory } = require('@nestjs/core');
 const { AppModule } = require('../dist/src/app.module');
 const { configureApp } = require('../dist/src/bootstrap');
