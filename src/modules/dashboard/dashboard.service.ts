@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 
 import type { CurrentUser } from '../../common/types/auth.types';
@@ -14,7 +14,6 @@ import {
   formatPeriodLabel,
   normalizeMoney,
   toPercentage,
-  type GroupByUnit,
 } from '../reports/reports.helpers';
 import { ReportsService } from '../reports/reports.service';
 import { evaluateVehicleQuality } from '../vehicles/vehicle-quality.helpers';
@@ -32,25 +31,10 @@ import type {
   VehicleTrackedCostResponse,
 } from '../vehicles/vehicles.types';
 import type { DashboardQueryDto } from './dto/dashboard-query.dto';
-
-const DASHBOARD_RANGES = [
-  'this_month',
-  'last_30_days',
-  'last_90_days',
-  'year_to_date',
-] as const;
-
-type DashboardRange = (typeof DASHBOARD_RANGES)[number];
-
-type DashboardPeriod = {
-  key: DashboardRange;
-  label: string;
-  start: Date;
-  end: Date;
-  previousStart: Date;
-  previousEnd: Date;
-  groupBy: GroupByUnit;
-};
+import {
+  resolveDashboardPeriod,
+  type DashboardPeriod,
+} from './dashboard-period';
 
 type InventoryQualitySummary = {
   averageScore: number;
@@ -115,7 +99,7 @@ export class DashboardService {
   ) {}
 
   async getDashboard(user: CurrentUser, query: DashboardQueryDto = {}) {
-    const period = this.resolvePeriod(query.range);
+    const period = resolveDashboardPeriod(query.range);
     const assigneeUserId = user.role === 'staff' ? user.id : undefined;
 
     const [inventoryQuality, inventoryStatuses, leadContext, followUpCounts] =
@@ -262,62 +246,6 @@ export class DashboardService {
         buyer: leadContext.buyerPipeline,
       },
       priorityQueue,
-    };
-  }
-
-  private resolvePeriod(value?: string): DashboardPeriod {
-    const range = (value?.trim() || 'this_month') as DashboardRange;
-
-    if (!DASHBOARD_RANGES.includes(range)) {
-      throw new BadRequestException(
-        `range must be one of: ${DASHBOARD_RANGES.join(', ')}`,
-      );
-    }
-
-    const now = new Date();
-    const end = new Date(now);
-    let start: Date;
-    let label: string;
-    let groupBy: GroupByUnit;
-
-    switch (range) {
-      case 'last_30_days':
-        start = this.startOfDay(now);
-        start.setDate(start.getDate() - 29);
-        label = 'Last 30 days';
-        groupBy = 'day';
-        break;
-      case 'last_90_days':
-        start = this.startOfDay(now);
-        start.setDate(start.getDate() - 89);
-        label = 'Last 90 days';
-        groupBy = 'week';
-        break;
-      case 'year_to_date':
-        start = new Date(now.getFullYear(), 0, 1);
-        label = 'Year to date';
-        groupBy = 'month';
-        break;
-      case 'this_month':
-      default:
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-        label = 'This month';
-        groupBy = 'day';
-        break;
-    }
-
-    const duration = end.getTime() - start.getTime();
-    const previousEnd = new Date(start.getTime() - 1);
-    const previousStart = new Date(previousEnd.getTime() - duration);
-
-    return {
-      key: range,
-      label,
-      start,
-      end,
-      previousStart,
-      previousEnd,
-      groupBy,
     };
   }
 

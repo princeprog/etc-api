@@ -252,14 +252,7 @@ export class ActivityHistoryService {
     let query = this.db.selectFrom('ops.activity_history');
 
     if (currentUser.role === 'staff') {
-      query = query.where((expressionBuilder) =>
-        expressionBuilder.not(
-          expressionBuilder.and([
-            expressionBuilder('entity_type', '=', 'user'),
-            expressionBuilder('action_type', '=', 'user.status_changed'),
-          ]),
-        ),
-      );
+      query = query.where('actor_user_id', '=', currentUser.id);
     }
 
     return query;

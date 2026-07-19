@@ -13,7 +13,12 @@ import { DATABASE } from '../src/database/database.constants';
 import type { DB } from '../src/database/db';
 
 const ADMIN_EMAIL = 'sales.admin@example.com';
+const STAFF_EMAIL = 'sales.staff@example.com';
 const PASSWORD = 'Password123!';
+const DASHBOARD_EXPENSE_TITLES = [
+  'Dashboard current expense',
+  'Dashboard older expense',
+];
 
 jest.setTimeout(15000);
 
@@ -21,11 +26,13 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
   let app: INestApplication<App>;
   let db: Kysely<DB>;
   let authCookies: string[];
+  let staffAuthCookies: string[];
   let buyerLeadId: string;
   let linkedVehicleId: string;
   let unlinkedVehicleId: string;
   let sellerLeadId: string;
   let userId: string;
+  let staffUserId: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -49,10 +56,14 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.buyer_leads').execute();
     await db.deleteFrom('crm.seller_leads').execute();
+    await db
+      .deleteFrom('finance.expenses')
+      .where('title', 'in', DASHBOARD_EXPENSE_TITLES)
+      .execute();
     await db.deleteFrom('authentication.sessions').execute();
     await db
       .deleteFrom('authentication.users')
-      .where('email', '=', ADMIN_EMAIL)
+      .where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL])
       .execute();
 
     const user = await db
@@ -68,6 +79,19 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
 
     userId = user.id;
 
+    const staffUser = await db
+      .insertInto('authentication.users')
+      .values({
+        email: STAFF_EMAIL,
+        password_hash: await hashPassword(PASSWORD),
+        full_name: 'Sales Staff',
+        role: 'staff',
+      })
+      .returning(['id'])
+      .executeTakeFirstOrThrow();
+
+    staffUserId = staffUser.id;
+
     const loginResponse = await request(app.getHttpServer())
       .post('/auth/login')
       .send({
@@ -79,6 +103,25 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     authCookies = [
       extractCookie(loginResponse.headers['set-cookie'], 'etc_access_token'),
       extractCookie(loginResponse.headers['set-cookie'], 'etc_refresh_token'),
+    ];
+
+    const staffLoginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: STAFF_EMAIL,
+        password: PASSWORD,
+      })
+      .expect(201);
+
+    staffAuthCookies = [
+      extractCookie(
+        staffLoginResponse.headers['set-cookie'],
+        'etc_access_token',
+      ),
+      extractCookie(
+        staffLoginResponse.headers['set-cookie'],
+        'etc_refresh_token',
+      ),
     ];
 
     const sellerLead = await db
@@ -213,10 +256,14 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     await db.deleteFrom('inventory.vehicles').execute();
     await db.deleteFrom('crm.buyer_leads').execute();
     await db.deleteFrom('crm.seller_leads').execute();
+    await db
+      .deleteFrom('finance.expenses')
+      .where('title', 'in', DASHBOARD_EXPENSE_TITLES)
+      .execute();
     await db.deleteFrom('authentication.sessions').execute();
     await db
       .deleteFrom('authentication.users')
-      .where('email', '=', ADMIN_EMAIL)
+      .where('email', 'in', [ADMIN_EMAIL, STAFF_EMAIL])
       .execute();
     await app.close();
   });
@@ -376,70 +423,217 @@ describe('Sales finalization and dashboard workflow (e2e)', () => {
     );
   });
 
-  it('returns dashboard metrics and operational queues', async () => {
+  it('returns a range-aware admin overview with coherent inventory totals', async () => {
     await createSale(app, authCookies, linkedVehicleId, buyerLeadId);
 
-    const response = await request(app.getHttpServer())
-      .get('/dashboard')
+    const olderPair = await seedLinkedSalePair(db, userId, {
+      stockNumber: 'SALE-DASH-OLD',
+      brand: 'Nissan',
+      model: 'Almera',
+      year: 2022,
+      purchasePrice: '500000.00',
+      targetSellingPrice: '650000.00',
+      minimumAcceptablePrice: '620000.00',
+      buyerName: 'Dashboard Older Buyer',
+      buyerContactNumber: '09170000061',
+      buyerEmail: 'dashboard.older@example.com',
+    });
+
+    await request(app.getHttpServer())
+      .post('/sales')
+      .set('Cookie', authCookies)
+      .send({
+        vehicleId: olderPair.vehicleId,
+        buyerLeadId: olderPair.buyerLeadId,
+        saleDate: '2026-01-15T09:00:00.000Z',
+        finalSaleAmount: '640000.00',
+        agentName: 'Agent Cruz',
+      })
+      .expect(201);
+
+    const category = await db
+      .selectFrom('finance.expense_categories')
+      .select('id')
+      .where('is_active', '=', true)
+      .executeTakeFirstOrThrow();
+
+    await db
+      .insertInto('finance.expenses')
+      .values([
+        {
+          title: DASHBOARD_EXPENSE_TITLES[0],
+          category_id: category.id,
+          expected_amount: '1200.00',
+          due_date: new Date('2026-07-19T00:00:00.000Z'),
+          status: 'unpaid',
+          created_by_user_id: userId,
+        },
+        {
+          title: DASHBOARD_EXPENSE_TITLES[1],
+          category_id: category.id,
+          expected_amount: '9000.00',
+          due_date: new Date('2026-01-15T00:00:00.000Z'),
+          status: 'unpaid',
+          created_by_user_id: userId,
+        },
+      ])
+      .execute();
+
+    const thisMonth = await request(app.getHttpServer())
+      .get('/dashboard?range=this_month')
       .set('Cookie', authCookies)
       .expect(200);
 
-    expect(response.body).toEqual({
-      metrics: expect.objectContaining({
-        activeInventory: 2,
-        activeSellerLeads: 1,
-        sellerLeadsRequiringAction: 1,
-        inspectionsPending: 0,
-        approvedLeadsAwaitingConversion: 0,
-        availableVehicles: 0,
-        reservedVehicles: 1,
-        soldVehicles: 1,
-        monthlySales: 1,
-        monthlyRevenue: '1280000.00',
-        monthlyProfit: '180000.00',
+    const yearToDate = await request(app.getHttpServer())
+      .get('/dashboard?range=year_to_date')
+      .set('Cookie', authCookies)
+      .expect(200);
+
+    expect(thisMonth.body).toEqual(
+      expect.objectContaining({
+        view: 'admin',
+        period: expect.objectContaining({
+          key: 'this_month',
+          label: 'This month',
+          groupBy: 'day',
+        }),
+        performance: expect.objectContaining({
+          totalSales: 1,
+          revenue: '1280000.00',
+          grossProfit: '180000.00',
+          expenses: expect.objectContaining({
+            totalExpectedAmount: '1200.00',
+          }),
+        }),
+        attention: expect.objectContaining({
+          overdueFollowUps: expect.any(Number),
+          dueTodayFollowUps: expect.any(Number),
+          pendingInspections: 0,
+        }),
       }),
-      analytics: {
-        acquisitionSalesTrend: {
-          twelveWeeks: expect.arrayContaining([
-            expect.objectContaining({
-              label: expect.any(String),
-              periodStart: expect.any(String),
-              vehiclesAcquired: expect.any(Number),
-              vehiclesSold: expect.any(Number),
-            }),
-          ]),
-          sixMonths: expect.any(Array),
-          oneYear: expect.any(Array),
-        },
-        sellerLeadPipeline: expect.arrayContaining([
-          {
-            status: 'New Inquiry',
-            count: 1,
-          },
-        ]),
-      },
-      queues: expect.objectContaining({
-        overdueFollowUps: expect.arrayContaining([
-          expect.objectContaining({
-            leadType: 'buyer',
-            status: 'Overdue',
-          }),
-        ]),
-        dueTodayFollowUps: expect.arrayContaining([
-          expect.objectContaining({
-            leadType: 'seller',
-            status: 'Due',
-          }),
-        ]),
-        newSellerLeads: expect.arrayContaining([
-          expect.objectContaining({
-            id: sellerLeadId,
-            status: 'New Inquiry',
-          }),
-        ]),
-        newBuyerLeads: expect.arrayContaining([]),
+    );
+
+    expect(yearToDate.body.performance).toEqual(
+      expect.objectContaining({
+        totalSales: 2,
+        revenue: '1920000.00',
+        expenses: expect.objectContaining({
+          totalExpectedAmount: '10200.00',
+        }),
       }),
+    );
+    expect(yearToDate.body.inventory).toEqual(thisMonth.body.inventory);
+
+    const statusTotal = Object.values(
+      thisMonth.body.inventory.statuses as Record<string, number>,
+    ).reduce((sum, count) => sum + count, 0);
+    expect(statusTotal).toBe(thisMonth.body.inventory.active);
+    expect(thisMonth.body.inventory.quality).toEqual(
+      expect.objectContaining({
+        totalActiveVehicles: thisMonth.body.inventory.active,
+        gradeCounts: expect.any(Object),
+      }),
+    );
+  });
+
+  it('returns assigned work and personal sales for staff users only', async () => {
+    const staffSeller = await db
+      .insertInto('crm.seller_leads')
+      .values({
+        seller_name: 'Staff Seller',
+        contact_number: '09170000071',
+        vehicle_brand: 'Honda',
+        vehicle_model: 'Civic',
+        assignee_user_id: staffUserId,
+        status: 'New Inquiry',
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+
+    await db
+      .insertInto('crm.follow_ups')
+      .values({
+        lead_type: 'seller',
+        seller_lead_id: staffSeller.id,
+        buyer_lead_id: null,
+        assignee_user_id: staffUserId,
+        due_at: new Date(Date.now() - 60_000),
+        status: 'Due',
+        note: 'Staff-only follow-up',
+      })
+      .execute();
+
+    const staffPair = await seedLinkedSalePair(db, staffUserId, {
+      stockNumber: 'SALE-STAFF-1',
+      brand: 'Mazda',
+      model: 'CX-5',
+      year: 2024,
+      purchasePrice: '1000000.00',
+      targetSellingPrice: '1200000.00',
+      minimumAcceptablePrice: '1150000.00',
+      buyerName: 'Staff Buyer',
+      buyerContactNumber: '09170000072',
+      buyerEmail: 'staff.buyer@example.com',
     });
+
+    await createSale(
+      app,
+      staffAuthCookies,
+      staffPair.vehicleId,
+      staffPair.buyerLeadId,
+    );
+
+    const response = await request(app.getHttpServer())
+      .get('/dashboard?range=this_month')
+      .set('Cookie', staffAuthCookies)
+      .expect(200);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        view: 'staff',
+        assignments: expect.objectContaining({
+          openLeads: 1,
+          activeSellerLeads: 1,
+          activeBuyerLeads: 0,
+          overdueFollowUps: 1,
+        }),
+        personalPerformance: expect.objectContaining({
+          totalSales: 1,
+          revenue: '1280000.00',
+          trend: expect.any(Array),
+        }),
+        priorityQueue: [
+          expect.objectContaining({
+            leadId: staffSeller.id,
+            leadName: 'Staff Seller',
+            urgency: 'overdue',
+          }),
+        ],
+      }),
+    );
+    expect(response.body.pipelines.seller).toEqual(
+      expect.arrayContaining([{ status: 'New Inquiry', count: 1 }]),
+    );
+
+    const activities = await request(app.getHttpServer())
+      .get(`/activity-history?actorUserId=${staffUserId}&page=1&pageSize=50`)
+      .set('Cookie', staffAuthCookies)
+      .expect(200);
+
+    expect(activities.body.events.length).toBeGreaterThan(0);
+    expect(
+      activities.body.events.every(
+        (event: { actorUserId: string | null }) =>
+          event.actorUserId === staffUserId,
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects unsupported dashboard ranges', async () => {
+    await request(app.getHttpServer())
+      .get('/dashboard?range=last_week')
+      .set('Cookie', authCookies)
+      .expect(400);
   });
 
   it('assigns yearly sale numbers and returns them from list/detail endpoints', async () => {
