@@ -10,6 +10,7 @@ import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { CreateExpenseDto } from './dto/create-expense.dto';
 import type { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
 import type { MarkExpensePaidDto } from './dto/mark-expense-paid.dto';
@@ -72,6 +73,7 @@ export class ExpensesService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async list(query: ListExpensesQueryDto): Promise<ExpenseListResponse> {
@@ -157,6 +159,7 @@ export class ExpensesService {
       },
     });
 
+    await this.notificationsService.refreshForExpense(expense.id);
     return this.findOne(expense.id);
   }
 
@@ -168,6 +171,8 @@ export class ExpensesService {
       throw new BadRequestException('Only unpaid expenses can be edited');
     }
 
+    const previousDueDate = formatDateKey(existing.due_date, 'UTC');
+    const previousAssigneeId = existing.assigned_staff_id;
     const model = await this.normalizeExpenseModel(dto, existing);
 
     await this.db
@@ -192,6 +197,13 @@ export class ExpensesService {
         dueDate: formatDateKey(model.due_date, 'UTC'),
       },
     });
+
+    if (
+      previousDueDate !== formatDateKey(model.due_date, 'UTC') ||
+      previousAssigneeId !== model.assigned_staff_id
+    ) {
+      await this.notificationsService.refreshForExpense(expenseId);
+    }
 
     return this.findOne(expenseId);
   }
@@ -241,6 +253,7 @@ export class ExpensesService {
       },
     });
 
+    await this.notificationsService.resolveForExpense(expenseId);
     return this.findOne(expenseId);
   }
 
@@ -279,6 +292,7 @@ export class ExpensesService {
       },
     });
 
+    await this.notificationsService.resolveForExpense(expenseId);
     return this.findOne(expenseId);
   }
 

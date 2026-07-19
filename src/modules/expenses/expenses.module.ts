@@ -1,9 +1,8 @@
 import { Module } from '@nestjs/common';
 
-import { ScheduleModule } from '@nestjs/schedule';
-
 import { AuthModule } from '../auth/auth.module';
 import { ActivityHistoryModule } from '../activity-history/activity-history.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { ExpenseCategoriesController } from './expense-categories.controller';
 import { ExpenseCategoriesService } from './expense-categories.service';
 import { ExpenseRecurringRulesController } from './expense-recurring-rules.controller';
@@ -12,7 +11,7 @@ import { ExpensesController } from './expenses.controller';
 import { ExpensesService } from './expenses.service';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), AuthModule, ActivityHistoryModule],
+  imports: [AuthModule, ActivityHistoryModule, NotificationsModule],
   controllers: [
     ExpensesController,
     ExpenseCategoriesController,

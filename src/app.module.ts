@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -15,10 +16,12 @@ import { ActivityHistoryModule } from './modules/activity-history/activity-histo
 import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.module';
 import { LeadPipelineModule } from './modules/lead-pipeline/lead-pipeline.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
     DatabaseModule,
+    ScheduleModule.forRoot(),
     AuthModule,
     BuyerLeadsModule,
     SellerLeadsModule,
@@ -32,6 +35,7 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
     VehicleCatalogModule,
     LeadPipelineModule,
     ExpensesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
