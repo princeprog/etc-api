@@ -273,6 +273,53 @@ export function addDaysToDateKey(dateKey: string, days: number) {
   return formatDateKey(date, 'UTC');
 }
 
+export function dateKeyToUtcDate(dateKey: string) {
+  return parseDateOnly(dateKey, 'date');
+}
+
+export function getUtcDateParts(dateKey: string) {
+  const date = dateKeyToUtcDate(dateKey);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+export function getDaysInMonth(year: number, month: number) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+export function getIsoWeekday(dateKey: string) {
+  const date = dateKeyToUtcDate(dateKey);
+  const day = date.getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
+export function getIsoWeekPeriodKey(dateKey: string) {
+  const date = dateKeyToUtcDate(dateKey);
+  const target = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+  const day = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(
+    ((target.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
+  );
+
+  return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+export function getMonthlyPeriodKey(dateKey: string) {
+  const { year, month } = getUtcDateParts(dateKey);
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+export function getYearlyPeriodKey(dateKey: string) {
+  return String(getUtcDateParts(dateKey).year);
+}
+
 export function moneyToCents(value: string | null | undefined) {
   if (!value) {
     return 0;
