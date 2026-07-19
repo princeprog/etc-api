@@ -35,6 +35,21 @@ export type VehicleTrackedCostCategory =
   | 'miscellaneous';
 export type SellerLeadDecision = 'Buy' | 'Negotiate' | 'Walk Away';
 export type InspectionItemRating = 'excellent' | 'good' | 'fair' | 'poor';
+export type ExpenseFrequency = 'one_time' | 'weekly' | 'monthly' | 'yearly';
+export type ExpenseRuleFrequency = Exclude<ExpenseFrequency, 'one_time'>;
+export type ExpenseSettlementStatus = 'unpaid' | 'paid' | 'void';
+export type ExpenseDisplayStatus =
+  | 'upcoming'
+  | 'due_soon'
+  | 'due_today'
+  | 'unpaid'
+  | 'paid'
+  | 'overdue'
+  | 'void';
+export type ExpenseNotificationType =
+  | 'expense_due_soon'
+  | 'expense_due_today'
+  | 'expense_overdue';
 
 export interface SellerLeadInspectionItem {
   rating: InspectionItemRating;
@@ -59,7 +74,10 @@ export type ActivityEntityType =
   | 'vehicle'
   | 'sale'
   | 'follow_up'
-  | 'user';
+  | 'user'
+  | 'expense'
+  | 'expense_category'
+  | 'expense_recurring_rule';
 
 export interface UsersTable {
   id: Generated<string>;
@@ -262,6 +280,76 @@ export interface ActivityHistoryTable {
   created_at: Generated<Date>;
 }
 
+export interface ExpenseCategoriesTable {
+  id: Generated<string>;
+  name: string;
+  description: string | null;
+  is_default: Generated<boolean>;
+  is_active: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ExpenseRecurringRulesTable {
+  id: Generated<string>;
+  title: string;
+  category_id: string;
+  expected_amount: string;
+  frequency: ExpenseRuleFrequency;
+  due_day: number;
+  start_date: Date;
+  end_date: Date | null;
+  vendor_name: string | null;
+  assigned_staff_id: string | null;
+  notes: string | null;
+  is_active: Generated<boolean>;
+  created_by_user_id: string;
+  updated_by_user_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ExpensesTable {
+  id: Generated<string>;
+  recurring_rule_id: string | null;
+  billing_period_key: string | null;
+  title: string;
+  category_id: string;
+  expected_amount: string;
+  actual_paid_amount: string | null;
+  expense_date: Date | null;
+  due_date: Date;
+  paid_at: Date | null;
+  status: ExpenseSettlementStatus;
+  vendor_name: string | null;
+  assigned_staff_id: string | null;
+  payment_method: string | null;
+  reference_number: string | null;
+  notes: string | null;
+  voided_at: Date | null;
+  void_reason: string | null;
+  created_by_user_id: string;
+  updated_by_user_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface NotificationsTable {
+  id: Generated<string>;
+  recipient_user_id: string;
+  type: ExpenseNotificationType;
+  title: string;
+  message: string;
+  entity_type: string;
+  entity_id: string;
+  due_date_snapshot: Date | null;
+  deduplication_key: string;
+  read_at: Date | null;
+  resolved_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface DB {
   'authentication.users': UsersTable;
   'authentication.sessions': SessionsTable;
@@ -277,6 +365,10 @@ export interface DB {
   'sales.sales': SalesTable;
   'sales.commissions': CommissionsTable;
   'ops.activity_history': ActivityHistoryTable;
+  'ops.notifications': NotificationsTable;
+  'finance.expense_categories': ExpenseCategoriesTable;
+  'finance.expense_recurring_rules': ExpenseRecurringRulesTable;
+  'finance.expenses': ExpensesTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -301,3 +393,19 @@ export type SellerLeadUpdate = Updateable<SellerLeadsTable>;
 export type BuyerLead = Selectable<BuyerLeadsTable>;
 export type NewBuyerLead = Insertable<BuyerLeadsTable>;
 export type BuyerLeadUpdate = Updateable<BuyerLeadsTable>;
+
+export type ExpenseCategory = Selectable<ExpenseCategoriesTable>;
+export type NewExpenseCategory = Insertable<ExpenseCategoriesTable>;
+export type ExpenseCategoryUpdate = Updateable<ExpenseCategoriesTable>;
+
+export type ExpenseRecurringRule = Selectable<ExpenseRecurringRulesTable>;
+export type NewExpenseRecurringRule = Insertable<ExpenseRecurringRulesTable>;
+export type ExpenseRecurringRuleUpdate = Updateable<ExpenseRecurringRulesTable>;
+
+export type Expense = Selectable<ExpensesTable>;
+export type NewExpense = Insertable<ExpensesTable>;
+export type ExpenseUpdate = Updateable<ExpensesTable>;
+
+export type Notification = Selectable<NotificationsTable>;
+export type NewNotification = Insertable<NotificationsTable>;
+export type NotificationUpdate = Updateable<NotificationsTable>;

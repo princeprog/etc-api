@@ -537,6 +537,60 @@ export interface ExtensionsPgStatStatementsInfo {
   stats_reset: Timestamp | null;
 }
 
+export interface FinanceExpenseCategories {
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_default: Generated<boolean>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface FinanceExpenseRecurringRules {
+  assigned_staff_id: string | null;
+  category_id: string;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  due_day: number;
+  end_date: Timestamp | null;
+  expected_amount: Numeric;
+  frequency: string;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  notes: string | null;
+  start_date: Timestamp;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+  vendor_name: string | null;
+}
+
+export interface FinanceExpenses {
+  actual_paid_amount: Numeric | null;
+  assigned_staff_id: string | null;
+  billing_period_key: string | null;
+  category_id: string;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  due_date: Timestamp;
+  expected_amount: Numeric;
+  expense_date: Timestamp | null;
+  id: Generated<string>;
+  notes: string | null;
+  paid_at: Timestamp | null;
+  payment_method: string | null;
+  recurring_rule_id: string | null;
+  reference_number: string | null;
+  status: Generated<string>;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+  vendor_name: string | null;
+  void_reason: string | null;
+  voided_at: Timestamp | null;
+}
+
 export interface InventoryVehicleBrands {
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
@@ -615,6 +669,22 @@ export interface OpsActivityHistory {
   id: Generated<string>;
   metadata: Json | null;
   summary: string;
+}
+
+export interface OpsNotifications {
+  created_at: Generated<Timestamp>;
+  deduplication_key: string;
+  due_date_snapshot: Timestamp | null;
+  entity_id: string;
+  entity_type: string;
+  id: Generated<string>;
+  message: string;
+  read_at: Timestamp | null;
+  recipient_user_id: string;
+  resolved_at: Timestamp | null;
+  title: string;
+  type: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface RealtimeMessages {
@@ -843,6 +913,9 @@ export interface DB {
   "crm.seller_leads": CrmSellerLeads;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
+  "finance.expense_categories": FinanceExpenseCategories;
+  "finance.expense_recurring_rules": FinanceExpenseRecurringRules;
+  "finance.expenses": FinanceExpenses;
   "inventory.vehicle_brands": InventoryVehicleBrands;
   "inventory.vehicle_models": InventoryVehicleModels;
   "inventory.vehicle_photos": InventoryVehiclePhotos;
@@ -850,6 +923,7 @@ export interface DB {
   "inventory.vehicle_variants": InventoryVehicleVariants;
   "inventory.vehicles": InventoryVehicles;
   "ops.activity_history": OpsActivityHistory;
+  "ops.notifications": OpsNotifications;
   "realtime.messages": RealtimeMessages;
   "realtime.schema_migrations": RealtimeSchemaMigrations;
   "realtime.subscription": RealtimeSubscription;
