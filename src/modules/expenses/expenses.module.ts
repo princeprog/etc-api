@@ -5,6 +5,8 @@ import { ActivityHistoryModule } from '../activity-history/activity-history.modu
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ExpenseCategoriesController } from './expense-categories.controller';
 import { ExpenseCategoriesService } from './expense-categories.service';
+import { ExpenseReportsController } from './expense-reports.controller';
+import { ExpenseReportsService } from './expense-reports.service';
 import { ExpenseRecurringRulesController } from './expense-recurring-rules.controller';
 import { ExpenseRecurringRulesService } from './expense-recurring-rules.service';
 import { ExpensesController } from './expenses.controller';
@@ -16,16 +18,19 @@ import { ExpensesService } from './expenses.service';
     ExpensesController,
     ExpenseCategoriesController,
     ExpenseRecurringRulesController,
+    ExpenseReportsController,
   ],
   providers: [
     ExpensesService,
     ExpenseCategoriesService,
     ExpenseRecurringRulesService,
+    ExpenseReportsService,
   ],
   exports: [
     ExpensesService,
     ExpenseCategoriesService,
     ExpenseRecurringRulesService,
+    ExpenseReportsService,
   ],
 })
 export class ExpensesModule {}

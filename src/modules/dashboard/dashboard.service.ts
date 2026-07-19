@@ -3,6 +3,7 @@ import { Kysely } from 'kysely';
 
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
+import { ExpenseReportsService } from '../expenses/expense-reports.service';
 import type { SellerLeadStatus } from '../../database/schema';
 import { centsToMoney } from '../sales/sales.helpers';
 import { evaluateVehicleQuality } from '../vehicles/vehicle-quality.helpers';
@@ -49,7 +50,10 @@ type DashboardTrendPoint = {
 
 @Injectable()
 export class DashboardService {
-  constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Kysely<DB>,
+    private readonly expenseReportsService: ExpenseReportsService,
+  ) {}
 
   async getDashboard() {
     const [
@@ -57,11 +61,13 @@ export class DashboardService {
       reservedVehicles,
       soldVehicles,
       inventoryQuality,
+      expenseSummary,
     ] = await Promise.all([
       this.countVehiclesByStatus('Available'),
       this.countVehiclesByStatus('Reserved'),
       this.countVehiclesByStatus('Sold'),
       this.getInventoryQualitySummary(),
+      this.expenseReportsService.getDashboardSummary(),
     ]);
 
     const now = new Date();
@@ -182,6 +188,7 @@ export class DashboardService {
         monthlyRevenue: centsToMoney(monthlyRevenueCents),
         monthlyProfit: centsToMoney(monthlyProfitCents),
         inventoryQuality,
+        expenses: expenseSummary,
       },
       analytics: {
         acquisitionSalesTrend: {
