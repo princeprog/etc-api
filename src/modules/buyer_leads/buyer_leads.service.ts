@@ -23,7 +23,6 @@ import {
 } from './buyer_leads.helpers';
 import { CreateBuyerLeadDto } from './dto/create-buyer_lead.dto';
 import { ListBuyerLeadsQueryDto } from './dto/list-buyer-leads-query.dto';
-import { LinkBuyerLeadVehicleDto } from './dto/link-buyer-lead-vehicle.dto';
 import { UpdateBuyerLeadDto } from './dto/update-buyer_lead.dto';
 
 @Injectable()
@@ -196,20 +195,6 @@ export class BuyerLeadsService {
       );
     }
 
-    if (nextStatus === 'Reserved') {
-      const links = await this.db
-        .selectFrom('crm.lead_vehicle_links')
-        .select(['id'])
-        .where('buyer_lead_id', '=', id)
-        .execute();
-
-      if (links.length === 0) {
-        throw new BadRequestException(
-          'A buyer lead must have at least one linked vehicle before becoming Reserved',
-        );
-      }
-    }
-
     await this.db
       .updateTable('crm.buyer_leads')
       .set({
@@ -264,116 +249,6 @@ export class BuyerLeadsService {
           : existingLead.inquiry_source,
       notes: updateBuyerLeadDto.notes !== undefined ? updateBuyerLeadDto.notes ?? null : existingLead.notes,
       closing_note: nextClosingNote,
-    });
-
-    return { buyerLead: await this.getBuyerLeadOrThrow(id) };
-  }
-
-  async linkVehicle(user: CurrentUser, id: string, dto: LinkBuyerLeadVehicleDto) {
-    await this.getLeadRecordOrThrow(id);
-
-    const vehicle = await this.db
-      .selectFrom('inventory.vehicles')
-      .select(['id', 'stock_number', 'brand', 'model'])
-      .where('id', '=', dto.vehicleId)
-      .executeTakeFirst();
-
-    if (!vehicle) {
-      throw new NotFoundException(`Vehicle ${dto.vehicleId} was not found`);
-    }
-
-    const existingLink = await this.db
-      .selectFrom('crm.lead_vehicle_links')
-      .select(['id'])
-      .where('buyer_lead_id', '=', id)
-      .where('vehicle_id', '=', dto.vehicleId)
-      .executeTakeFirst();
-
-    if (existingLink) {
-      throw new BadRequestException(
-        'Vehicle is already linked to this buyer lead',
-      );
-    }
-
-    await this.db
-      .insertInto('crm.lead_vehicle_links')
-      .values({
-        buyer_lead_id: id,
-        vehicle_id: dto.vehicleId,
-      })
-      .execute();
-
-    await this.activityHistoryService.write({
-      actor: user,
-      entityType: 'buyer_lead',
-      entityId: id,
-      actionType: 'buyer_lead.vehicle_linked',
-      summary: `Linked vehicle ${vehicle.stock_number} to buyer lead`,
-      metadata: {
-        vehicleId: vehicle.id,
-        vehicleStockNumber: vehicle.stock_number,
-        vehicleLabel: `${vehicle.brand} ${vehicle.model}`,
-      },
-    });
-
-    await this.activityHistoryService.write({
-      actor: user,
-      entityType: 'vehicle',
-      entityId: vehicle.id,
-      actionType: 'vehicle.linked_to_buyer_lead',
-      summary: 'Vehicle linked to buyer lead',
-      metadata: {
-        buyerLeadId: id,
-      },
-    });
-
-    return { buyerLead: await this.getBuyerLeadOrThrow(id) };
-  }
-
-  async unlinkVehicle(user: CurrentUser, id: string, vehicleId: string) {
-    await this.getLeadRecordOrThrow(id);
-
-    const vehicle = await this.db
-      .selectFrom('inventory.vehicles')
-      .select(['id', 'stock_number', 'brand', 'model'])
-      .where('id', '=', vehicleId)
-      .executeTakeFirst();
-
-    const deleted = await this.db
-      .deleteFrom('crm.lead_vehicle_links')
-      .where('buyer_lead_id', '=', id)
-      .where('vehicle_id', '=', vehicleId)
-      .executeTakeFirst();
-
-    if (!deleted.numDeletedRows || Number(deleted.numDeletedRows) === 0) {
-      throw new NotFoundException(
-        `Vehicle ${vehicleId} is not linked to buyer lead ${id}`,
-      );
-    }
-
-    await this.activityHistoryService.write({
-      actor: user,
-      entityType: 'buyer_lead',
-      entityId: id,
-      actionType: 'buyer_lead.vehicle_unlinked',
-      summary: vehicle?.stock_number
-        ? `Unlinked vehicle ${vehicle.stock_number} from buyer lead`
-        : 'Vehicle unlinked from buyer lead',
-      metadata: {
-        vehicleId,
-        vehicleStockNumber: vehicle?.stock_number ?? null,
-      },
-    });
-
-    await this.activityHistoryService.write({
-      actor: user,
-      entityType: 'vehicle',
-      entityId: vehicleId,
-      actionType: 'vehicle.unlinked_from_buyer_lead',
-      summary: 'Vehicle unlinked from buyer lead',
-      metadata: {
-        buyerLeadId: id,
-      },
     });
 
     return { buyerLead: await this.getBuyerLeadOrThrow(id) };

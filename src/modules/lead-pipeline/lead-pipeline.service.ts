@@ -3,7 +3,6 @@ import type { Kysely } from 'kysely';
 
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
-import type { VehicleStatus } from '../../database/schema';
 import { buildBuyerLeadPipeline } from './buyer-lead-pipeline.builder';
 import { buildSellerLeadPipeline } from './seller-lead-pipeline.builder';
 import type {
@@ -58,21 +57,7 @@ export class LeadPipelineService {
       return byLeadId;
     }
 
-    const [vehicleRows, followUpRows, saleRows] = await Promise.all([
-      this.db
-        .selectFrom('crm.lead_vehicle_links')
-        .innerJoin(
-          'inventory.vehicles',
-          'inventory.vehicles.id',
-          'crm.lead_vehicle_links.vehicle_id',
-        )
-        .select([
-          'crm.lead_vehicle_links.buyer_lead_id as buyerLeadId',
-          'inventory.vehicles.id as vehicleId',
-          'inventory.vehicles.status as vehicleStatus',
-        ])
-        .where('crm.lead_vehicle_links.buyer_lead_id', 'in', buyerLeadIds)
-        .execute(),
+    const [followUpRows, saleRows] = await Promise.all([
       this.db
         .selectFrom('crm.follow_ups')
         .select([
@@ -92,13 +77,6 @@ export class LeadPipelineService {
 
     for (const id of buyerLeadIds) {
       byLeadId.set(id, { vehicles: [], followUps: [], sales: [] });
-    }
-
-    for (const row of vehicleRows) {
-      byLeadId.get(row.buyerLeadId)?.vehicles.push({
-        id: row.vehicleId,
-        status: row.vehicleStatus as VehicleStatus,
-      });
     }
 
     for (const row of followUpRows) {

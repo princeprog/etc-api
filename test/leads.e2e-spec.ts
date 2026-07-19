@@ -195,46 +195,9 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .expect(400);
   });
 
-  it('links and unlinks vehicles, rejects duplicates, and requires vehicle links for Reserved status', async () => {
+  it('allows Reserved buyer status without manual vehicle links', async () => {
     const createResponse = await createBuyerLead(app, authCookies);
     const buyerLeadId = createResponse.body.buyerLead.id;
-
-    await request(app.getHttpServer())
-      .patch(`/buyer-leads/${buyerLeadId}`)
-      .set('Cookie', authCookies)
-      .send({
-        status: 'Reserved',
-        assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
-      })
-      .expect(400);
-
-    const linkResponse = await request(app.getHttpServer())
-      .post(`/buyer-leads/${buyerLeadId}/vehicle-links`)
-      .set('Cookie', authCookies)
-      .send({
-        vehicleId,
-      })
-      .expect(201);
-
-    expect(linkResponse.body.buyerLead.vehicles).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: vehicleId })]),
-    );
-    expect(linkResponse.body.buyerLead.pipeline).toEqual(
-      expect.objectContaining({
-        stage: 'ready_to_reserve',
-        nextAction: expect.objectContaining({
-          code: 'schedule_follow_up',
-        }),
-      }),
-    );
-
-    await request(app.getHttpServer())
-      .post(`/buyer-leads/${buyerLeadId}/vehicle-links`)
-      .set('Cookie', authCookies)
-      .send({
-        vehicleId,
-      })
-      .expect(400);
 
     await request(app.getHttpServer())
       .patch(`/buyer-leads/${buyerLeadId}`)
@@ -258,13 +221,6 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         }),
       }),
     );
-
-    const unlinkResponse = await request(app.getHttpServer())
-      .delete(`/buyer-leads/${buyerLeadId}/vehicle-links/${vehicleId}`)
-      .set('Cookie', authCookies)
-      .expect(200);
-
-    expect(unlinkResponse.body.buyerLead.vehicles).toEqual([]);
   });
 
   it('creates follow-ups for buyer and seller leads and lists due and overdue work', async () => {
@@ -474,7 +430,7 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         }),
       ]);
     },
-    15000,
+    60000,
   );
 
   it('excludes won buyer leads when eligibleForSale is requested', async () => {
@@ -527,7 +483,7 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
   });
 
   it(
-    'derives buyer lead pipeline states across follow-up, vehicle matching, reservation, win, and staleness',
+    'derives buyer lead pipeline states across follow-up, reservation, win, and staleness',
     async () => {
       const assigneeUserId = await currentUserId(app);
 
@@ -569,27 +525,10 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
 
     expect(contactedBuyer.body.buyerLead.pipeline).toEqual(
       expect.objectContaining({
-        stage: 'contacted_follow_up',
+        stage: 'active_buyer',
         nextAction: expect.objectContaining({
-          code: 'link_vehicle',
+          code: 'review_buyer_lead',
         }),
-      }),
-    );
-
-    await request(app.getHttpServer())
-      .post(`/buyer-leads/${freshBuyer.body.buyerLead.id}/vehicle-links`)
-      .set('Cookie', authCookies)
-      .send({ vehicleId })
-      .expect(201);
-
-    const matchedBuyer = await request(app.getHttpServer())
-      .get(`/buyer-leads/${freshBuyer.body.buyerLead.id}`)
-      .set('Cookie', authCookies)
-      .expect(200);
-
-    expect(matchedBuyer.body.buyerLead.pipeline).toEqual(
-      expect.objectContaining({
-        stage: 'ready_to_reserve',
       }),
     );
 

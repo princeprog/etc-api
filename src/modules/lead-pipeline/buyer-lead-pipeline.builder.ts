@@ -19,13 +19,6 @@ export function buildBuyerLeadPipeline(
   const hasUpcomingFollowUp = openFollowUps.some(
     (followUp) => !followUp.completedAt && followUp.dueAt >= new Date(),
   );
-  const hasLinkedVehicle = lead.vehicles.length > 0;
-  const linkedAvailableVehicle = lead.vehicles.find(
-    (vehicle) => vehicle.status !== 'Sold',
-  );
-  const hasReservedVehicle = lead.vehicles.some(
-    (vehicle) => vehicle.status === 'Reserved',
-  );
   const hasSale = lead.sales.length > 0;
   const hasContactInfo = Boolean(
     lead.contactNumber.trim() || lead.email || lead.facebookName,
@@ -48,26 +41,6 @@ export function buildBuyerLeadPipeline(
       description: 'Schedule a follow-up to keep this buyer lead active.',
       severity: 'warning',
       target: 'follow_up',
-    });
-  }
-
-  if (!isClosed && !hasLinkedVehicle) {
-    blockers.push({
-      code: 'buyer_vehicle_missing',
-      label: 'No linked vehicle',
-      description: 'Link a vehicle before reserving this buyer.',
-      severity: 'critical',
-      target: 'vehicle_link',
-    });
-  }
-
-  if (hasLinkedVehicle && !linkedAvailableVehicle && !hasSale) {
-    blockers.push({
-      code: 'buyer_linked_vehicle_unavailable',
-      label: 'Linked vehicle unavailable',
-      description: 'Review the linked vehicle because it is no longer available.',
-      severity: 'critical',
-      target: 'vehicle_link',
     });
   }
 
@@ -113,14 +86,14 @@ export function buildBuyerLeadPipeline(
     stage = 'won_sale_finalized';
     stageLabel = 'Won / Sale Finalized';
     progressPercent = 100;
-  } else if (hasReservedVehicle || lead.status === 'Reserved') {
+  } else if (lead.status === 'Reserved') {
     stage = 'sale_finalization_pending';
     stageLabel = 'Sale Finalization Pending';
     progressPercent = 85;
-  } else if (hasLinkedVehicle && linkedAvailableVehicle) {
-    stage = 'ready_to_reserve';
-    stageLabel = 'Ready to Reserve';
-    progressPercent = 65;
+  } else if (lead.status === 'Negotiating' || lead.status === 'Interested') {
+    stage = 'active_buyer';
+    stageLabel = 'Active Buyer';
+    progressPercent = 60;
   } else if (hasMeaningfulContact || lead.followUps.length > 0) {
     stage = 'contacted_follow_up';
     stageLabel = 'Contacted / In Follow-up';
@@ -145,26 +118,19 @@ export function buildBuyerLeadPipeline(
       description: 'Schedule a follow-up to keep this buyer lead moving.',
       target: 'follow_up',
     };
-  } else if (!hasLinkedVehicle) {
-    nextAction = {
-      code: 'link_vehicle',
-      label: 'Link a vehicle',
-      description: 'Match this buyer with an available vehicle before reserving.',
-      target: 'vehicle_link',
-    };
-  } else if (lead.status === 'Reserved' || hasReservedVehicle) {
+  } else if (lead.status === 'Reserved') {
     nextAction = {
       code: 'finalize_sale',
       label: 'Finalize sale',
-      description: 'Complete the sale workflow for this reserved buyer and vehicle.',
+      description: 'Complete the sale workflow for this reserved buyer.',
       target: 'sale_finalization',
     };
   } else {
     nextAction = {
-      code: 'review_linked_vehicle',
-      label: 'Review linked vehicle',
-      description: 'Review the linked vehicle and confirm whether this buyer is ready to reserve.',
-      target: 'vehicle_link',
+      code: 'review_buyer_lead',
+      label: 'Review buyer lead',
+      description: 'Review buyer requirements, notes, and follow-up history.',
+      target: 'lead_edit',
     };
   }
 
@@ -185,16 +151,6 @@ export function buildBuyerLeadPipeline(
           .map((followUp) => followUp.completedAt)
           .filter((value): value is Date => value instanceof Date),
       ),
-      linkedVehicleCount: lead.vehicles.length,
-      availableLinkedVehicleCount: lead.vehicles.filter(
-        (vehicle) => vehicle.status === 'Available',
-      ).length,
-      reservedLinkedVehicleCount: lead.vehicles.filter(
-        (vehicle) => vehicle.status === 'Reserved',
-      ).length,
-      soldLinkedVehicleCount: lead.vehicles.filter(
-        (vehicle) => vehicle.status === 'Sold',
-      ).length,
       finalizedSaleCount: lead.sales.length,
       staleAfterDays,
     },

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -6,7 +6,6 @@ import type { CurrentUser as AuthUser } from '../../common/types/auth.types';
 import { BuyerLeadsService } from './buyer_leads.service';
 import { CreateBuyerLeadDto } from './dto/create-buyer_lead.dto';
 import { ListBuyerLeadsQueryDto } from './dto/list-buyer-leads-query.dto';
-import { LinkBuyerLeadVehicleDto } from './dto/link-buyer-lead-vehicle.dto';
 import { UpdateBuyerLeadDto } from './dto/update-buyer_lead.dto';
 
 @UseGuards(AccessTokenGuard)
@@ -38,21 +37,4 @@ export class BuyerLeadsController {
     return this.buyerLeadsService.update(user, id, updateBuyerLeadDto);
   }
 
-  @Post(':id/vehicle-links')
-  linkVehicle(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: LinkBuyerLeadVehicleDto,
-  ) {
-    return this.buyerLeadsService.linkVehicle(user, id, dto);
-  }
-
-  @Delete(':id/vehicle-links/:vehicleId')
-  unlinkVehicle(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Param('vehicleId') vehicleId: string,
-  ) {
-    return this.buyerLeadsService.unlinkVehicle(user, id, vehicleId);
-  }
 }

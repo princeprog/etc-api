@@ -342,7 +342,7 @@ export class SalesService {
         );
       }
 
-      await this.ensureBuyerVehicleLink(user, buyerLead, vehicle, trx);
+      await this.ensureSaleVehicleSelection(user, buyerLead, vehicle, trx);
 
       const closingNote = buyerClosingNote ?? buyerLead.closing_note;
 
@@ -850,10 +850,10 @@ export class SalesService {
     const vehicle = await this.getVehicleOrThrow(vehicleId, trx);
     const buyerLead = await this.getBuyerLeadOrThrow(buyerLeadId, trx);
 
-    await this.ensureBuyerVehicleLink(user, buyerLead, vehicle, trx);
+    await this.ensureSaleVehicleSelection(user, buyerLead, vehicle, trx);
   }
 
-  private async ensureBuyerVehicleLink(
+  private async ensureSaleVehicleSelection(
     user: CurrentUser,
     buyerLead: {
       id: string;
@@ -899,8 +899,8 @@ export class SalesService {
         actor: user,
         entityType: 'buyer_lead',
         entityId: buyerLead.id,
-        actionType: 'buyer_lead.vehicle_linked',
-        summary: `Linked vehicle ${vehicle.stock_number} to buyer lead from Sales`,
+        actionType: 'buyer_lead.sale_vehicle_selected',
+        summary: `Selected vehicle ${vehicle.stock_number} for this sale`,
         metadata: {
           vehicleId: vehicle.id,
           vehicleStockNumber: vehicle.stock_number,
@@ -916,8 +916,8 @@ export class SalesService {
         actor: user,
         entityType: 'vehicle',
         entityId: vehicle.id,
-        actionType: 'vehicle.linked_to_buyer_lead',
-        summary: 'Vehicle linked to buyer lead from Sales',
+        actionType: 'vehicle.selected_for_buyer_sale',
+        summary: 'Vehicle selected for buyer sale',
         metadata: {
           buyerLeadId: buyerLead.id,
           buyerName: buyerLead.buyer_name,
