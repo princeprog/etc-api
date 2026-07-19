@@ -346,12 +346,6 @@ export class SalesService {
 
       const closingNote = buyerClosingNote ?? buyerLead.closing_note;
 
-      if (!closingNote?.trim()) {
-        throw new BadRequestException(
-          'buyerClosingNote is required when the buyer lead does not already have a closing note',
-        );
-      }
-
       const grossProfitAmount =
         vehicle.purchase_price === null
           ? null
