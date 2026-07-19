@@ -14,6 +14,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
 import { ActivityHistoryModule } from './modules/activity-history/activity-history.module';
 import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.module';
 import { LeadPipelineModule } from './modules/lead-pipeline/lead-pipeline.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { LeadPipelineModule } from './modules/lead-pipeline/lead-pipeline.module
     ActivityHistoryModule,
     VehicleCatalogModule,
     LeadPipelineModule,
+    ExpensesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -8,6 +8,9 @@ const ACTIVITY_ENTITY_TYPES: ActivityEntityType[] = [
   'sale',
   'follow_up',
   'user',
+  'expense',
+  'expense_category',
+  'expense_recurring_rule',
 ];
 
 export function parseActivityEntityType(value: string): ActivityEntityType {

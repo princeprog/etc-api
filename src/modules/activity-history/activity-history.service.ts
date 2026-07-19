@@ -28,6 +28,9 @@ const ACTIVITY_ENTITY_TYPES = [
   'sale',
   'follow_up',
   'user',
+  'expense',
+  'expense_category',
+  'expense_recurring_rule',
 ] as const satisfies ActivityEntityType[];
 
 const ACTIVITY_DATE_RANGES = [
@@ -117,7 +120,10 @@ export class ActivityHistoryService {
     };
   }
 
-  async listAll(currentUser: CurrentUser, query: ListActivityHistoryQueryDto = {}) {
+  async listAll(
+    currentUser: CurrentUser,
+    query: ListActivityHistoryQueryDto = {},
+  ) {
     const pagination = this.parseHistoryPagination(query, 100);
     const filters = this.normalizeFilters(query);
 
@@ -197,7 +203,10 @@ export class ActivityHistoryService {
     };
   }
 
-  async exportLogs(currentUser: CurrentUser, query: ListActivityHistoryQueryDto = {}) {
+  async exportLogs(
+    currentUser: CurrentUser,
+    query: ListActivityHistoryQueryDto = {},
+  ) {
     const filters = this.normalizeFilters(query);
     const events = await this.applyFilters(
       this.buildVisibleEventsQuery(currentUser) as ActivityHistoryQueryBuilder,
