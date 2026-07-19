@@ -36,8 +36,8 @@ importers:
         specifier: ^9.0.3
         version: 9.0.3
       kysely:
-        specifier: ^0.29.2
-        version: 0.29.2
+        specifier: ^0.28.8
+        version: 0.28.8
       pg:
         specifier: ^8.22.0
         version: 8.22.0
@@ -101,10 +101,10 @@ importers:
         version: 30.4.2(@types/node@24.13.2)(ts-node@10.9.2(@types/node@24.13.2)(typescript@5.9.3))
       kysely-codegen:
         specifier: ^0.20.0
-        version: 0.20.0(kysely@0.29.2)(pg@8.22.0)(typescript@5.9.3)
+        version: 0.20.0(kysely@0.28.8)(pg@8.22.0)(typescript@5.9.3)
       kysely-ctl:
         specifier: ^0.21.0
-        version: 0.21.0(kysely@0.29.2)
+        version: 0.21.0(kysely@0.28.8)
       prettier:
         specifier: ^3.4.2
         version: 3.8.4
@@ -2363,9 +2363,9 @@ packages:
       kysely-prisma-postgres:
         optional: true
 
-  kysely@0.29.2:
-    resolution: {integrity: sha512-s6WVJyEZrbm6jhBpiKHsGHyePMrVQKJ85wZCFCr9W4QHv6WTjWIrdvTmO9hDEA3bNK0xkrE2DqrHsXMLWuZpQg==}
-    engines: {node: '>=22.0.0'}
+  kysely@0.28.8:
+    resolution: {integrity: sha512-QUOgl5ZrS9IRuhq5FvOKFSsD/3+IA6MLE81/bOOTRA/YQpKDza2sFdN5g6JCB9BOpqMJDGefLCQ9F12hRS13TA==}
+    engines: {node: '>=20.0.0'}
 
   leven@3.1.0:
     resolution: {integrity: sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A==}
@@ -5957,14 +5957,14 @@ snapshots:
     dependencies:
       json-buffer: 3.0.1
 
-  kysely-codegen@0.20.0(kysely@0.29.2)(pg@8.22.0)(typescript@5.9.3):
+  kysely-codegen@0.20.0(kysely@0.28.8)(pg@8.22.0)(typescript@5.9.3):
     dependencies:
       chalk: 4.1.2
       cosmiconfig: 9.0.2(typescript@5.9.3)
       diff: 8.0.4
       dotenv: 17.4.2
       dotenv-expand: 12.0.3
-      kysely: 0.29.2
+      kysely: 0.28.8
       micromatch: 4.0.8
       minimist: 1.2.8
       pluralize: 8.0.0
@@ -5974,14 +5974,14 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  kysely-ctl@0.21.0(kysely@0.29.2):
+  kysely-ctl@0.21.0(kysely@0.28.8):
     dependencies:
       c12: 3.3.4
       citty: 0.2.2
       confbox: 0.2.4
       consola: 3.4.2
       jiti: 2.7.0
-      kysely: 0.29.2
+      kysely: 0.28.8
       nypm: 0.6.7
       ofetch: 1.5.1
       pathe: 2.0.3
@@ -5990,7 +5990,7 @@ snapshots:
     transitivePeerDependencies:
       - magicast
 
-  kysely@0.29.2: {}
+  kysely@0.28.8: {}
 
   leven@3.1.0: {}
 
