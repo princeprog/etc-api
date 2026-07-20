@@ -10,6 +10,7 @@ import {
   moneyToCents,
   parseDateOnly,
   parseExpenseDisplayStatus,
+  parseExpenseFrequency,
   resolveExpenseDisplayStatus,
 } from './expenses.helpers';
 import type { ExpenseReportQueryDto } from './dto/expense-report-query.dto';
@@ -136,6 +137,11 @@ export class ExpenseReportsService {
         'assigned_staff.id',
         'finance.expenses.assigned_staff_id',
       )
+      .leftJoin(
+        'finance.expense_recurring_rules',
+        'finance.expense_recurring_rules.id',
+        'finance.expenses.recurring_rule_id',
+      )
       .select([
         'finance.expenses.id as id',
         'finance.expenses.title as title',
@@ -151,6 +157,23 @@ export class ExpenseReportsService {
         'finance.expenses.assigned_staff_id as assigned_staff_id',
         'assigned_staff.full_name as assigned_staff_full_name',
       ])
+      .$if(Boolean(query.search?.trim()), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb('finance.expenses.title', 'ilike', `%${query.search?.trim()}%`),
+            eb(
+              'finance.expenses.vendor_name',
+              'ilike',
+              `%${query.search?.trim()}%`,
+            ),
+            eb(
+              'finance.expense_categories.name',
+              'ilike',
+              `%${query.search?.trim()}%`,
+            ),
+          ]),
+        ),
+      )
       .$if(Boolean(range.start), (qb) =>
         qb.where('finance.expenses.due_date', '>=', range.start as Date),
       )
@@ -185,6 +208,19 @@ export class ExpenseReportsService {
           query.assignedStaffId?.trim() as string,
         ),
       )
+      .$if(Boolean(query.frequency), (qb) => {
+        const frequency = parseExpenseFrequency(query.frequency, 'one_time');
+
+        if (frequency === 'one_time') {
+          return qb.where('finance.expenses.recurring_rule_id', 'is', null);
+        }
+
+        return qb.where(
+          'finance.expense_recurring_rules.frequency',
+          '=',
+          frequency,
+        );
+      })
       .orderBy('finance.expenses.due_date', 'asc');
 
     const rows = await rowsQuery.execute();
@@ -418,6 +454,8 @@ export class ExpenseReportsService {
       endDate: range.end ? formatDateKey(range.end, 'UTC') : null,
       categoryId: query.categoryId ?? null,
       status: query.status ?? null,
+      search: query.search ?? null,
+      frequency: query.frequency ?? null,
       paymentMethod: query.paymentMethod ?? null,
       vendorName: query.vendorName ?? null,
       assignedStaffId: query.assignedStaffId ?? null,

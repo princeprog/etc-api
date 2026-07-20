@@ -3,6 +3,8 @@ export class ExpenseReportQueryDto {
   endDate?: string;
   categoryId?: string;
   status?: string;
+  search?: string;
+  frequency?: string;
   paymentMethod?: string;
   vendorName?: string;
   assignedStaffId?: string;
