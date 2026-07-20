@@ -192,14 +192,7 @@ export class ExpensesService {
       throw new BadRequestException('Only unpaid expenses can be edited');
     }
 
-    const canEditExpense =
-      user.role === 'admin' || existing.assigned_staff_id === user.id;
-
-    if (!canEditExpense) {
-      throw new ForbiddenException(
-        'Only admins or assigned staff can edit this expense',
-      );
-    }
+    this.ensureCanManageExpense(user, existing.assigned_staff_id);
 
     const previousDueDate = formatDateKey(existing.due_date, 'UTC');
     const previousAssigneeId = existing.assigned_staff_id;
@@ -246,6 +239,8 @@ export class ExpensesService {
   async markPaid(user: CurrentUser, id: string, dto: MarkExpensePaidDto) {
     const expenseId = requireTrimmed(id, 'id');
     const existing = await this.getExpenseForMutation(expenseId);
+
+    this.ensureCanManageExpense(user, existing.assigned_staff_id);
 
     if (existing.status !== 'unpaid') {
       throw new BadRequestException('Only unpaid expenses can be marked paid');
@@ -299,6 +294,8 @@ export class ExpensesService {
     const expenseId = requireTrimmed(id, 'id');
     const existing = await this.getExpenseForMutation(expenseId);
 
+    this.ensureCanManageExpense(user, existing.assigned_staff_id);
+
     if (existing.status !== 'paid') {
       throw new BadRequestException('Only paid expenses can have receipts');
     }
@@ -340,6 +337,8 @@ export class ExpensesService {
     const expenseId = requireTrimmed(id, 'id');
     const existing = await this.getExpenseForMutation(expenseId);
 
+    this.ensureCanManageExpense(user, existing.assigned_staff_id);
+
     if (existing.status !== 'paid') {
       throw new BadRequestException('Only paid expenses can have receipts');
     }
@@ -379,6 +378,8 @@ export class ExpensesService {
   async void(user: CurrentUser, id: string, dto: VoidExpenseDto) {
     const expenseId = requireTrimmed(id, 'id');
     const existing = await this.getExpenseForMutation(expenseId);
+
+    this.ensureCanManageExpense(user, existing.assigned_staff_id);
 
     if (existing.status !== 'unpaid') {
       throw new BadRequestException('Only unpaid expenses can be voided');
@@ -770,6 +771,19 @@ export class ExpensesService {
       default:
         return query;
     }
+  }
+
+  private ensureCanManageExpense(
+    user: CurrentUser,
+    assignedStaffId: string | null,
+  ) {
+    if (user.role === 'admin' || assignedStaffId === user.id) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      'Only admins or assigned staff can manage this expense',
+    );
   }
 
   private applySorting(

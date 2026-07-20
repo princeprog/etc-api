@@ -53,7 +53,6 @@ export class ExpensesController {
   }
 
   @Post(':id/mark-paid')
-  @Roles('admin')
   markPaid(
     @CurrentUser() user: CurrentUserType,
     @Param('id') id: string,
@@ -63,7 +62,6 @@ export class ExpensesController {
   }
 
   @Post(':id/receipt')
-  @Roles('admin')
   replaceReceipt(
     @CurrentUser() user: CurrentUserType,
     @Param('id') id: string,
@@ -73,13 +71,11 @@ export class ExpensesController {
   }
 
   @Post(':id/receipt/remove')
-  @Roles('admin')
   removeReceipt(@CurrentUser() user: CurrentUserType, @Param('id') id: string) {
     return this.expensesService.removeReceipt(user, id);
   }
 
   @Post(':id/void')
-  @Roles('admin')
   void(
     @CurrentUser() user: CurrentUserType,
     @Param('id') id: string,
