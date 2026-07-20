@@ -50,6 +50,13 @@ export type ExpenseNotificationType =
   | 'expense_due_soon'
   | 'expense_due_today'
   | 'expense_overdue';
+export type FollowUpNotificationType =
+  | 'follow_up_due_soon'
+  | 'follow_up_due_today'
+  | 'follow_up_overdue';
+export type NotificationType =
+  | ExpenseNotificationType
+  | FollowUpNotificationType;
 
 export interface SellerLeadInspectionItem {
   rating: InspectionItemRating;
@@ -337,7 +344,7 @@ export interface ExpensesTable {
 export interface NotificationsTable {
   id: Generated<string>;
   recipient_user_id: string;
-  type: ExpenseNotificationType;
+  type: NotificationType;
   title: string;
   message: string;
   entity_type: string;
