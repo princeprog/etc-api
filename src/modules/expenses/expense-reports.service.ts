@@ -204,23 +204,24 @@ export class ExpenseReportsService {
   }
 
   private buildSummary(rows: ExpenseReportRow[], todayKey: string) {
-    const totalExpectedCents = rows.reduce(
+    const financialRows = this.getFinancialRows(rows);
+    const totalExpectedCents = financialRows.reduce(
       (sum, row) => sum + moneyToCents(row.expected_amount),
       0,
     );
-    const paidRows = rows.filter((row) => row.status === 'paid');
-    const unpaidRows = rows.filter((row) => row.status === 'unpaid');
-    const overdueRows = rows.filter(
+    const paidRows = financialRows.filter((row) => row.status === 'paid');
+    const unpaidRows = financialRows.filter((row) => row.status === 'unpaid');
+    const overdueRows = financialRows.filter(
       (row) => resolveExpenseDisplayStatus(row) === 'overdue',
     );
-    const dueSoonRows = rows.filter((row) => {
+    const dueSoonRows = financialRows.filter((row) => {
       const status = resolveExpenseDisplayStatus(row);
       return status === 'due_soon' || status === 'due_today';
     });
-    const byCategory = this.groupByCategory(rows);
+    const byCategory = this.groupByCategory(financialRows);
 
     return {
-      totalExpenses: rows.length,
+      totalExpenses: financialRows.length,
       totalExpectedAmount: centsToMoney(totalExpectedCents),
       paidAmount: centsToMoney(
         paidRows.reduce(
@@ -255,6 +256,7 @@ export class ExpenseReportsService {
   }
 
   private groupByCategory(rows: ExpenseReportRow[]) {
+    const financialRows = this.getFinancialRows(rows);
     const grouped = new Map<
       string,
       {
@@ -267,7 +269,7 @@ export class ExpenseReportsService {
       }
     >();
 
-    for (const row of rows) {
+    for (const row of financialRows) {
       const existing = grouped.get(row.category_id) ?? {
         categoryId: row.category_id,
         categoryName: row.category_name,
@@ -306,17 +308,18 @@ export class ExpenseReportsService {
 
     return statuses.map((status) => {
       const source = rows.filter((row) => row.status === status);
+      const financialSource = status === 'void' ? [] : source;
       return {
         status,
         count: source.length,
         expectedAmount: centsToMoney(
-          source.reduce(
+          financialSource.reduce(
             (sum, row) => sum + moneyToCents(row.expected_amount),
             0,
           ),
         ),
         paidAmount: centsToMoney(
-          source.reduce(
+          financialSource.reduce(
             (sum, row) =>
               sum + moneyToCents(row.actual_paid_amount ?? row.expected_amount),
             0,
@@ -327,6 +330,7 @@ export class ExpenseReportsService {
   }
 
   private groupByMonth(rows: ExpenseReportRow[]) {
+    const financialRows = this.getFinancialRows(rows);
     const grouped = new Map<
       string,
       {
@@ -337,7 +341,7 @@ export class ExpenseReportsService {
       }
     >();
 
-    for (const row of rows) {
+    for (const row of financialRows) {
       const month = formatDateKey(row.due_date).slice(0, 7);
       const existing = grouped.get(month) ?? {
         count: 0,
@@ -367,6 +371,10 @@ export class ExpenseReportsService {
         unpaidAmount: centsToMoney(item.unpaidCents),
       }))
       .sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  private getFinancialRows(rows: ExpenseReportRow[]) {
+    return rows.filter((row) => row.status !== 'void');
   }
 
   private resolveDateRange(query: ExpenseReportQueryDto) {
