@@ -42,6 +42,12 @@ export class AuthController {
     return this.authService.me(user);
   }
 
+  @UseGuards(AccessTokenGuard)
+  @Get('realtime-token')
+  async realtimeToken(@CurrentUser() user: CurrentUserType) {
+    return this.authService.createRealtimeToken(user);
+  }
+
   @Post('refresh')
   async refresh(
     @Req() request: Request,

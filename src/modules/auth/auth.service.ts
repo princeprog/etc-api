@@ -2,10 +2,13 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { createPrivateKey, type JsonWebKey } from 'crypto';
 import type { Response } from 'express';
+import { sign } from 'jsonwebtoken';
 import type { Kysely } from 'kysely';
 
 import { DATABASE } from '../../database/database.constants';
@@ -41,6 +44,7 @@ import { ActivityHistoryService } from '../activity-history/activity-history.ser
 
 const DEFAULT_STAFF_PASSWORD = '123456';
 const MIN_PASSWORD_LENGTH = 6;
+const DEFAULT_REALTIME_TOKEN_TTL_SECONDS = 10 * 60;
 
 @Injectable()
 export class AuthService {
@@ -91,6 +95,44 @@ export class AuthService {
 
   me(user: CurrentUser): { user: CurrentUser } {
     return { user };
+  }
+
+  createRealtimeToken(user: CurrentUser): {
+    token: string;
+    expiresAt: string;
+  } {
+    const privateJwk = this.getRealtimePrivateJwk();
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    const ttlInSeconds = this.realtimeTokenTtlSeconds;
+    const expiresAt = new Date((nowInSeconds + ttlInSeconds) * 1000);
+    const privateKey = createPrivateKey({
+      key: privateJwk,
+      format: 'jwk',
+    });
+
+    const token = sign(
+      {
+        sub: user.id,
+        role: 'authenticated',
+        iat: nowInSeconds,
+        exp: nowInSeconds + ttlInSeconds,
+      },
+      privateKey,
+      {
+        algorithm: 'ES256',
+        keyid: privateJwk.kid,
+        header: {
+          alg: 'ES256',
+          kid: privateJwk.kid,
+          typ: 'JWT',
+        },
+      },
+    );
+
+    return {
+      token,
+      expiresAt: expiresAt.toISOString(),
+    };
   }
 
   async refresh(
@@ -720,5 +762,46 @@ export class AuthService {
 
   private get refreshExpiresInMs(): number {
     return durationToMs(process.env.JWT_REFRESH_EXPIRES_IN ?? '30d');
+  }
+
+  private get realtimeTokenTtlSeconds(): number {
+    const configured = Number(process.env.SUPABASE_REALTIME_TOKEN_TTL_SECONDS);
+
+    if (Number.isFinite(configured) && configured > 60) {
+      return Math.floor(configured);
+    }
+
+    return DEFAULT_REALTIME_TOKEN_TTL_SECONDS;
+  }
+
+  private getRealtimePrivateJwk(): JsonWebKey & { kid: string } {
+    const rawJwk = process.env.SUPABASE_REALTIME_PRIVATE_JWK;
+
+    if (!rawJwk) {
+      throw new ServiceUnavailableException(
+        'Realtime notifications are not configured',
+      );
+    }
+
+    try {
+      const jwk = JSON.parse(rawJwk) as JsonWebKey & { kid?: string };
+
+      if (
+        jwk.kty !== 'EC' ||
+        jwk.crv !== 'P-256' ||
+        !jwk.d ||
+        !jwk.x ||
+        !jwk.y ||
+        !jwk.kid
+      ) {
+        throw new Error('Invalid ES256 JWK');
+      }
+
+      return jwk as JsonWebKey & { kid: string };
+    } catch {
+      throw new ServiceUnavailableException(
+        'Realtime notifications are not configured',
+      );
+    }
   }
 }
