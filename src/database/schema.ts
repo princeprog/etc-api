@@ -335,6 +335,13 @@ export interface ExpensesTable {
   notes: string | null;
   voided_at: Date | null;
   void_reason: string | null;
+  receipt_file_url: string | null;
+  receipt_public_id: string | null;
+  receipt_original_filename: string | null;
+  receipt_mime_type: string | null;
+  receipt_file_size: number | null;
+  receipt_uploaded_at: Date | null;
+  receipt_uploaded_by_user_id: string | null;
   created_by_user_id: string;
   updated_by_user_id: string | null;
   created_at: Generated<Date>;

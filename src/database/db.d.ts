@@ -580,6 +580,13 @@ export interface FinanceExpenses {
   notes: string | null;
   paid_at: Timestamp | null;
   payment_method: string | null;
+  receipt_file_size: number | null;
+  receipt_file_url: string | null;
+  receipt_mime_type: string | null;
+  receipt_original_filename: string | null;
+  receipt_public_id: string | null;
+  receipt_uploaded_at: Timestamp | null;
+  receipt_uploaded_by_user_id: string | null;
   recurring_rule_id: string | null;
   reference_number: string | null;
   status: Generated<string>;
