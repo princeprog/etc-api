@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
@@ -32,6 +33,27 @@ import { resolveFollowUpNotificationType } from './notifications.helpers';
 import type { NotificationResponse } from './notifications.types';
 
 const UNIQUE_VIOLATION_CODE = '23505';
+const NOTIFICATION_CATEGORIES = [
+  'all',
+  'follow-ups',
+  'sales',
+  'bills',
+  'system',
+] as const;
+const NOTIFICATION_STATUSES = ['all', 'read', 'unread'] as const;
+const NOTIFICATION_DATE_RANGES = ['all', '7', '30', '90'] as const;
+
+type NotificationCategoryFilter = (typeof NOTIFICATION_CATEGORIES)[number];
+type NotificationStatusFilter = (typeof NOTIFICATION_STATUSES)[number];
+type NotificationDateRangeFilter = (typeof NOTIFICATION_DATE_RANGES)[number];
+
+type NormalizedNotificationFilters = {
+  search: string | null;
+  category: NotificationCategoryFilter;
+  status: NotificationStatusFilter;
+  dateRange: NotificationDateRangeFilter;
+  includeResolved: boolean;
+};
 
 type NotificationRow = {
   id: string;
@@ -104,7 +126,7 @@ export class NotificationsService implements OnApplicationBootstrap {
     });
     const offset = (page - 1) * pageSize;
     const unreadOnly = parseBoolean(query.unreadOnly);
-    const includeResolved = parseBoolean(query.includeResolved);
+    const filters = this.normalizeListFilters(query, unreadOnly);
 
     const filtered = this.applyNotificationFilters(
       this.db
@@ -123,16 +145,14 @@ export class NotificationsService implements OnApplicationBootstrap {
           'updated_at',
         ])
         .where('recipient_user_id', '=', user.id),
-      unreadOnly,
-      includeResolved,
+      filters,
     );
     const countQuery = this.applyNotificationFilters(
       this.db
         .selectFrom('ops.notifications')
         .select(({ fn }) => fn.count<string>('id').as('total'))
         .where('recipient_user_id', '=', user.id),
-      unreadOnly,
-      includeResolved,
+      filters,
     );
 
     const [rows, totalRow] = await Promise.all([
@@ -671,16 +691,122 @@ export class NotificationsService implements OnApplicationBootstrap {
     };
   }
 
-  private applyNotificationFilters<
-    TQuery extends { where: (...args: any[]) => TQuery },
-  >(query: TQuery, unreadOnly: boolean, includeResolved: boolean) {
-    let nextQuery = query;
+  private normalizeListFilters(
+    query: ListNotificationsQueryDto,
+    unreadOnly: boolean,
+  ): NormalizedNotificationFilters {
+    const search = query.search?.trim() || null;
+    const category = this.parseNotificationCategory(query.category);
+    const status = unreadOnly
+      ? 'unread'
+      : this.parseNotificationStatus(query.status);
+    const dateRange = this.parseNotificationDateRange(query.dateRange);
+    const includeResolved = parseBoolean(query.includeResolved);
 
-    if (unreadOnly) {
-      nextQuery = nextQuery.where('read_at', 'is', null);
+    return {
+      search,
+      category,
+      status,
+      dateRange,
+      includeResolved,
+    };
+  }
+
+  private parseNotificationCategory(
+    value: string | undefined,
+  ): NotificationCategoryFilter {
+    const normalized = value?.trim() || 'all';
+
+    if (
+      NOTIFICATION_CATEGORIES.includes(normalized as NotificationCategoryFilter)
+    ) {
+      return normalized as NotificationCategoryFilter;
     }
 
-    if (!includeResolved) {
+    throw new BadRequestException(
+      `category must be one of: ${NOTIFICATION_CATEGORIES.join(', ')}`,
+    );
+  }
+
+  private parseNotificationStatus(
+    value: string | undefined,
+  ): NotificationStatusFilter {
+    const normalized = value?.trim() || 'all';
+
+    if (
+      NOTIFICATION_STATUSES.includes(normalized as NotificationStatusFilter)
+    ) {
+      return normalized as NotificationStatusFilter;
+    }
+
+    throw new BadRequestException(
+      `status must be one of: ${NOTIFICATION_STATUSES.join(', ')}`,
+    );
+  }
+
+  private parseNotificationDateRange(
+    value: string | undefined,
+  ): NotificationDateRangeFilter {
+    const normalized = value?.trim() || 'all';
+
+    if (
+      NOTIFICATION_DATE_RANGES.includes(
+        normalized as NotificationDateRangeFilter,
+      )
+    ) {
+      return normalized as NotificationDateRangeFilter;
+    }
+
+    throw new BadRequestException(
+      `dateRange must be one of: ${NOTIFICATION_DATE_RANGES.join(', ')}`,
+    );
+  }
+
+  private applyNotificationFilters<
+    TQuery extends { where: (...args: any[]) => TQuery },
+  >(query: TQuery, filters: NormalizedNotificationFilters) {
+    let nextQuery = query;
+
+    if (filters.search) {
+      const pattern = `%${filters.search}%`;
+      nextQuery = nextQuery.where((eb: any) =>
+        eb.or([
+          eb('title', 'ilike', pattern),
+          eb('message', 'ilike', pattern),
+          eb('entity_type', 'ilike', pattern),
+        ]),
+      );
+    }
+
+    if (filters.category === 'follow-ups') {
+      nextQuery = nextQuery.where('entity_type', '=', 'follow_up');
+    } else if (filters.category === 'sales') {
+      nextQuery = nextQuery.where('entity_type', '=', 'sale');
+    } else if (filters.category === 'bills') {
+      nextQuery = nextQuery.where('entity_type', '=', 'expense');
+    } else if (filters.category === 'system') {
+      nextQuery = nextQuery.where('entity_type', 'not in', [
+        'expense',
+        'follow_up',
+        'sale',
+      ]);
+    }
+
+    if (filters.status === 'unread') {
+      nextQuery = nextQuery.where('read_at', 'is', null);
+    } else if (filters.status === 'read') {
+      nextQuery = nextQuery.where('read_at', 'is not', null);
+    }
+
+    if (filters.dateRange !== 'all') {
+      const days = Number(filters.dateRange);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDate.setHours(0, 0, 0, 0);
+      nextQuery = nextQuery.where('created_at', '>=', startDate);
+    }
+
+    if (!filters.includeResolved) {
       nextQuery = nextQuery.where('resolved_at', 'is', null);
     }
 
