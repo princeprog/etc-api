@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -191,9 +192,23 @@ export class ExpensesService {
       throw new BadRequestException('Only unpaid expenses can be edited');
     }
 
+    const canEditExpense =
+      user.role === 'admin' || existing.assigned_staff_id === user.id;
+
+    if (!canEditExpense) {
+      throw new ForbiddenException(
+        'Only admins or assigned staff can edit this expense',
+      );
+    }
+
     const previousDueDate = formatDateKey(existing.due_date, 'UTC');
     const previousAssigneeId = existing.assigned_staff_id;
-    const model = await this.normalizeExpenseModel(dto, existing);
+    const model = await this.normalizeExpenseModel(
+      user.role === 'admin'
+        ? dto
+        : { ...dto, assignedStaffId: existing.assigned_staff_id },
+      existing,
+    );
 
     await this.db
       .updateTable('finance.expenses')

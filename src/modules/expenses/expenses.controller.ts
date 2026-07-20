@@ -44,7 +44,6 @@ export class ExpensesController {
   }
 
   @Patch(':id')
-  @Roles('admin')
   update(
     @CurrentUser() user: CurrentUserType,
     @Param('id') id: string,
