@@ -3,6 +3,8 @@ export interface FileStorageSaveInput {
   buffer: Buffer;
   mimeType: string;
   originalName: string;
+  folder?: string;
+  resourceType?: 'auto' | 'image' | 'raw';
 }
 
 export interface StoredFile {

@@ -58,11 +58,13 @@ export class CloudinaryStorageService implements FileStorage, OnModuleInit {
       .filter((publicId): publicId is string => Boolean(publicId));
 
     await Promise.all(
-      publicIds.map((publicId) =>
-        cloudinary.uploader.destroy(publicId, {
-          invalidate: true,
-          resource_type: 'image',
-        }),
+      publicIds.flatMap((publicId) =>
+        (['image', 'raw'] as const).map((resourceType) =>
+          cloudinary.uploader.destroy(publicId, {
+            invalidate: true,
+            resource_type: resourceType,
+          }),
+        ),
       ),
     );
   }
@@ -71,8 +73,9 @@ export class CloudinaryStorageService implements FileStorage, OnModuleInit {
     return new Promise<UploadApiResponse>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: `etc-cars/users/${input.userId}/vehicle-photos`,
-          resource_type: 'image',
+          resource_type: input.resourceType ?? 'image',
+          folder:
+            input.folder ?? `etc-cars/users/${input.userId}/vehicle-photos`,
           use_filename: false,
           unique_filename: true,
           filename_override: this.sanitizeFilename(input.originalName),
