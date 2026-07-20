@@ -123,13 +123,16 @@ export class CloudinaryStorageService implements FileStorage, OnModuleInit {
 
     try {
       const url = new URL(value);
-      const uploadMarker = '/image/upload/';
-      const uploadMarkerIndex = url.pathname.indexOf(uploadMarker);
+      const uploadMarker =
+        ['/image/upload/', '/raw/upload/'].find((marker) =>
+          url.pathname.includes(marker),
+        ) ?? null;
 
-      if (uploadMarkerIndex === -1) {
+      if (!uploadMarker) {
         return null;
       }
 
+      const uploadMarkerIndex = url.pathname.indexOf(uploadMarker);
       const pathAfterUpload = url.pathname.slice(
         uploadMarkerIndex + uploadMarker.length,
       );
