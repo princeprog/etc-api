@@ -17,6 +17,7 @@ import type {
   FollowUpNotificationType,
   LeadType,
   NotificationType,
+  VehicleNotificationType,
 } from '../../database/schema';
 import {
   addDaysToDateKey,
@@ -91,6 +92,16 @@ type FollowUpNotificationSource = {
   vehicle_model: string | null;
   buyer_name: string | null;
   contact_number: string | null;
+};
+
+type VehicleNotificationSource = {
+  id: string;
+  stock_number: string;
+  brand: string;
+  model: string;
+  year: number;
+  variant: string | null;
+  updated_at: Date;
 };
 
 @Injectable()
@@ -246,6 +257,42 @@ export class NotificationsService implements OnApplicationBootstrap {
   async refreshForFollowUp(followUpId: string) {
     await this.resolveForFollowUp(followUpId);
     return this.generateFollowUpNotificationsForFollowUp(followUpId);
+  }
+
+  async notifyVehicleAvailable(vehicleId: string) {
+    const vehicle = await this.db
+      .selectFrom('inventory.vehicles')
+      .select([
+        'id',
+        'stock_number',
+        'brand',
+        'model',
+        'year',
+        'variant',
+        'updated_at',
+      ])
+      .where('id', '=', vehicleId)
+      .executeTakeFirst();
+
+    if (!vehicle) {
+      return { created: 0 };
+    }
+
+    const recipients = await this.resolveAllActiveRecipients();
+    let created = 0;
+
+    for (const recipientId of recipients) {
+      const didCreate = await this.upsertVehicleNotification(
+        recipientId,
+        vehicle,
+        'vehicle_available',
+      );
+      if (didCreate) {
+        created += 1;
+      }
+    }
+
+    return { created };
   }
 
   async generateExpenseNotifications() {
@@ -469,6 +516,16 @@ export class NotificationsService implements OnApplicationBootstrap {
     return Array.from(new Set(users.map((user) => user.id)));
   }
 
+  private async resolveAllActiveRecipients() {
+    const users = await this.db
+      .selectFrom('authentication.users')
+      .select(['id'])
+      .where('active', '=', true)
+      .execute();
+
+    return users.map((user) => user.id);
+  }
+
   private async upsertNotification(
     recipientId: string,
     expense: ExpenseNotificationSource,
@@ -579,6 +636,60 @@ export class NotificationsService implements OnApplicationBootstrap {
     }
   }
 
+  private async upsertVehicleNotification(
+    recipientId: string,
+    vehicle: VehicleNotificationSource,
+    type: VehicleNotificationType,
+  ) {
+    const statusChangedAt = vehicle.updated_at.toISOString();
+    const deduplicationKey = `${type}:vehicle:${vehicle.id}:${statusChangedAt}:${recipientId}`;
+    const content = this.buildVehicleNotificationContent(vehicle, type);
+    const existing = await this.db
+      .selectFrom('ops.notifications')
+      .select(['id', 'resolved_at'])
+      .where('deduplication_key', '=', deduplicationKey)
+      .executeTakeFirst();
+
+    if (existing) {
+      if (!existing.resolved_at) {
+        await this.db
+          .updateTable('ops.notifications')
+          .set({
+            title: content.title,
+            message: content.message,
+            updated_at: new Date(),
+          })
+          .where('id', '=', existing.id)
+          .execute();
+      }
+
+      return false;
+    }
+
+    try {
+      await this.db
+        .insertInto('ops.notifications')
+        .values({
+          recipient_user_id: recipientId,
+          type,
+          title: content.title,
+          message: content.message,
+          entity_type: 'vehicle',
+          entity_id: vehicle.id,
+          deduplication_key: deduplicationKey,
+        })
+        .execute();
+
+      return true;
+    } catch (error) {
+      if (this.isDatabaseError(error) && error.code === UNIQUE_VIOLATION_CODE) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
   private buildExpenseNotificationContent(
     expense: ExpenseNotificationSource,
     type: ExpenseNotificationType,
@@ -640,6 +751,28 @@ export class NotificationsService implements OnApplicationBootstrap {
         return {
           title: 'Overdue follow-up',
           message: `${leadLabel} had a follow-up due on ${dueDate} at ${dueTime}: ${note}.`,
+        };
+    }
+  }
+
+  private buildVehicleNotificationContent(
+    vehicle: VehicleNotificationSource,
+    type: VehicleNotificationType,
+  ) {
+    const vehicleLabel = [
+      vehicle.year,
+      vehicle.brand,
+      vehicle.model,
+      vehicle.variant,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    switch (type) {
+      case 'vehicle_available':
+        return {
+          title: 'Vehicle now available',
+          message: `${vehicle.stock_number} - ${vehicleLabel} is now available for buyer matching and sales activity.`,
         };
     }
   }
@@ -834,7 +967,9 @@ function mapNotification(row: NotificationRow): NotificationResponse {
         ? `/bills-expenses/${row.entity_id}`
         : row.entity_type === 'follow_up'
           ? '/follow-ups'
-          : null,
+          : row.entity_type === 'vehicle'
+            ? `/vehicles/${row.entity_id}`
+            : null,
     dueDateSnapshot: row.due_date_snapshot,
     isRead: row.read_at !== null,
     readAt: row.read_at,
@@ -851,7 +986,8 @@ function parseNotificationType(value: string): NotificationType {
     value === 'expense_overdue' ||
     value === 'follow_up_due_soon' ||
     value === 'follow_up_due_today' ||
-    value === 'follow_up_overdue'
+    value === 'follow_up_overdue' ||
+    value === 'vehicle_available'
   ) {
     return value;
   }

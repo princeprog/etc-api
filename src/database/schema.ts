@@ -54,9 +54,11 @@ export type FollowUpNotificationType =
   | 'follow_up_due_soon'
   | 'follow_up_due_today'
   | 'follow_up_overdue';
+export type VehicleNotificationType = 'vehicle_available';
 export type NotificationType =
   | ExpenseNotificationType
-  | FollowUpNotificationType;
+  | FollowUpNotificationType
+  | VehicleNotificationType;
 
 export interface SellerLeadInspectionItem {
   rating: InspectionItemRating;

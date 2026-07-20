@@ -18,6 +18,7 @@ import type { DB } from '../../database/db';
 import type { VehicleStatus } from '../../database/schema';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import type { ActivityHistoryMetadata } from '../activity-history/activity-history.types';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { ListVehicleTrackedCostsQueryDto } from './dto/list-vehicle-tracked-costs-query.dto';
 import { ListVehiclesQueryDto } from './dto/list-vehicles-query.dto';
@@ -46,6 +47,7 @@ export class VehiclesService {
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly vehiclePhotoStorageService: VehiclePhotoStorageService,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(user: CurrentUser, createVehicleDto: CreateVehicleDto) {
@@ -300,6 +302,13 @@ export class VehiclesService {
 
     if (removedPhotoPaths.length > 0) {
       await this.vehiclePhotoStorageService.deleteFiles(removedPhotoPaths);
+    }
+
+    if (
+      existingVehicle.status !== 'Available' &&
+      vehicle.status === 'Available'
+    ) {
+      await this.notificationsService.notifyVehicleAvailable(vehicle.id);
     }
 
     return { vehicle };
