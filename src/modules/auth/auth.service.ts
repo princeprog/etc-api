@@ -22,6 +22,11 @@ import type {
   RefreshTokenPayload,
 } from '../../common/types/auth.types';
 import {
+  buildPaginatedResponse,
+  parsePagination,
+  type PaginationParams,
+} from '../../common/utils/list-query.utils';
+import {
   durationToMs,
   generateTokenId,
   hashPassword,
@@ -256,12 +261,44 @@ export class AuthService {
     return { user: this.toCurrentUser(this.normalizeUser(insertedUser)) };
   }
 
-  async listUsers(query: ListUsersQueryDto): Promise<{ users: CurrentUser[] }> {
+  async listUsers(query: ListUsersQueryDto): Promise<{
+    users: CurrentUser[];
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    summary: {
+      adminCount: number;
+      totalStaffCount: number;
+      activeStaffCount: number;
+      disabledStaffCount: number;
+    };
+  }> {
+    const pagination = parsePagination(query);
+    const total = await this.countFilteredStaffUsers(query);
+    const summary = await this.getUsersSummary();
+    const users = await this.getFilteredStaffUsers(query, pagination);
+    const response = buildPaginatedResponse(
+      users.map((user) => this.toCurrentUser(this.normalizeUser(user))),
+      pagination,
+      total,
+    );
+
+    return {
+      users: response.items,
+      page: response.page,
+      pageSize: response.pageSize,
+      total: response.total,
+      totalPages: response.totalPages,
+      summary,
+    };
+  }
+
+  private buildFilteredStaffUsersQuery(query: ListUsersQueryDto) {
     const search = query.search?.trim();
     const status = query.status?.trim();
     let usersQuery = this.db
       .selectFrom('authentication.users')
-      .selectAll()
       .where('role', '=', 'staff');
 
     if (search) {
@@ -295,10 +332,42 @@ export class AuthService {
       }
     }
 
-    const users = await usersQuery.orderBy('created_at', 'asc').execute();
+    return usersQuery;
+  }
+
+  private async countFilteredStaffUsers(query: ListUsersQueryDto) {
+    const totalRow = await this.buildFilteredStaffUsersQuery(query)
+      .select(({ fn }) => fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+
+    return Number(totalRow.count);
+  }
+
+  private async getFilteredStaffUsers(
+    query: ListUsersQueryDto,
+    pagination: PaginationParams,
+  ) {
+    return this.buildFilteredStaffUsersQuery(query)
+      .selectAll()
+      .orderBy('created_at', 'asc')
+      .offset(pagination.offset)
+      .limit(pagination.pageSize)
+      .execute();
+  }
+
+  private async getUsersSummary() {
+    const rows = await this.db
+      .selectFrom('authentication.users')
+      .select(['role', 'active'])
+      .execute();
+
+    const staffUsers = rows.filter((user) => user.role === 'staff');
 
     return {
-      users: users.map((user) => this.toCurrentUser(this.normalizeUser(user))),
+      adminCount: rows.filter((user) => user.role === 'admin').length,
+      totalStaffCount: staffUsers.length,
+      activeStaffCount: staffUsers.filter((user) => user.active).length,
+      disabledStaffCount: staffUsers.filter((user) => !user.active).length,
     };
   }
 
