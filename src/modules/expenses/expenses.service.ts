@@ -11,7 +11,9 @@ import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ExpenseReceiptStorageService } from '../../common/storage/expense-receipt-storage.service';
 import type { CreateExpenseDto } from './dto/create-expense.dto';
+import type { ExpenseReceiptDto } from './dto/expense-receipt.dto';
 import type { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
 import type { MarkExpensePaidDto } from './dto/mark-expense-paid.dto';
 import type { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -52,6 +54,13 @@ type ExpenseJoinedRow = {
   notes: string | null;
   voided_at: Date | null;
   void_reason: string | null;
+  receipt_file_url: string | null;
+  receipt_public_id: string | null;
+  receipt_original_filename: string | null;
+  receipt_mime_type: string | null;
+  receipt_file_size: number | null;
+  receipt_uploaded_at: Date | null;
+  receipt_uploaded_by_user_id: string | null;
   created_by_user_id: string;
   updated_by_user_id: string | null;
   created_at: Date;
@@ -68,12 +77,23 @@ type ExpenseJoinedRow = {
   recurring_frequency: string | null;
 };
 
+type ExpenseReceiptModel = {
+  receipt_file_url: string;
+  receipt_public_id: string | null;
+  receipt_original_filename: string | null;
+  receipt_mime_type: string | null;
+  receipt_file_size: number | null;
+  receipt_uploaded_at: Date;
+  receipt_uploaded_by_user_id: string;
+};
+
 @Injectable()
 export class ExpensesService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly activityHistoryService: ActivityHistoryService,
     private readonly notificationsService: NotificationsService,
+    private readonly expenseReceiptStorageService: ExpenseReceiptStorageService,
   ) {}
 
   async list(query: ListExpensesQueryDto): Promise<ExpenseListResponse> {
@@ -224,6 +244,7 @@ export class ExpensesService {
     const paymentMethod = normalizeOptionalTrimmed(dto.paymentMethod);
     const referenceNumber = normalizeOptionalTrimmed(dto.referenceNumber);
     const notes = normalizeOptionalTrimmed(dto.notes) ?? existing.notes;
+    const receipt = this.normalizeReceipt(dto.receipt, user.id);
 
     await this.db
       .updateTable('finance.expenses')
@@ -234,6 +255,7 @@ export class ExpensesService {
         payment_method: paymentMethod,
         reference_number: referenceNumber,
         notes,
+        ...receipt,
         updated_by_user_id: user.id,
         updated_at: new Date(),
       })
@@ -250,10 +272,92 @@ export class ExpensesService {
         title: existing.title,
         actualPaidAmount,
         paidAt: paidAt.toISOString(),
+        receiptAttached: Boolean(receipt),
       },
     });
 
     await this.notificationsService.resolveForExpense(expenseId);
+    return this.findOne(expenseId);
+  }
+
+  async replaceReceipt(user: CurrentUser, id: string, dto: ExpenseReceiptDto) {
+    const expenseId = requireTrimmed(id, 'id');
+    const existing = await this.getExpenseForMutation(expenseId);
+
+    if (existing.status !== 'paid') {
+      throw new BadRequestException('Only paid expenses can have receipts');
+    }
+
+    const previousReceipt = existing.receipt_file_url;
+    const receipt = this.normalizeReceipt(dto, user.id);
+
+    await this.db
+      .updateTable('finance.expenses')
+      .set({
+        ...receipt,
+        updated_by_user_id: user.id,
+        updated_at: new Date(),
+      })
+      .where('id', '=', expenseId)
+      .execute();
+
+    await this.deleteReceiptFile(previousReceipt);
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'expense',
+      entityId: expenseId,
+      actionType: existing.receipt_file_url
+        ? 'expense.receipt_replaced'
+        : 'expense.receipt_uploaded',
+      summary: existing.receipt_file_url
+        ? 'Expense receipt replaced'
+        : 'Expense receipt uploaded',
+      metadata: {
+        title: existing.title,
+        receiptOriginalFilename: receipt.receipt_original_filename,
+      },
+    });
+
+    return this.findOne(expenseId);
+  }
+
+  async removeReceipt(user: CurrentUser, id: string) {
+    const expenseId = requireTrimmed(id, 'id');
+    const existing = await this.getExpenseForMutation(expenseId);
+
+    if (existing.status !== 'paid') {
+      throw new BadRequestException('Only paid expenses can have receipts');
+    }
+
+    await this.db
+      .updateTable('finance.expenses')
+      .set({
+        receipt_file_url: null,
+        receipt_public_id: null,
+        receipt_original_filename: null,
+        receipt_mime_type: null,
+        receipt_file_size: null,
+        receipt_uploaded_at: null,
+        receipt_uploaded_by_user_id: null,
+        updated_by_user_id: user.id,
+        updated_at: new Date(),
+      })
+      .where('id', '=', expenseId)
+      .execute();
+
+    await this.deleteReceiptFile(existing.receipt_file_url);
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'expense',
+      entityId: expenseId,
+      actionType: 'expense.receipt_removed',
+      summary: 'Expense receipt removed',
+      metadata: {
+        title: existing.title,
+        receiptOriginalFilename: existing.receipt_original_filename,
+      },
+    });
+
     return this.findOne(expenseId);
   }
 
@@ -414,6 +518,46 @@ export class ExpensesService {
     }
   }
 
+  private normalizeReceipt(
+    receipt: ExpenseReceiptDto | null | undefined,
+    userId: string,
+  ): Partial<ExpenseReceiptModel> {
+    if (!receipt) {
+      return {};
+    }
+
+    const fileUrl = requireTrimmed(receipt.fileUrl, 'receipt.fileUrl');
+    const fileSize =
+      receipt.fileSize === undefined ||
+      receipt.fileSize === null ||
+      receipt.fileSize === ''
+        ? null
+        : parsePositiveInteger(receipt.fileSize, 0, 'receipt.fileSize', {
+            min: 0,
+            max: 50 * 1024 * 1024,
+          });
+
+    return {
+      receipt_file_url: fileUrl,
+      receipt_public_id: normalizeOptionalTrimmed(receipt.publicId),
+      receipt_original_filename: normalizeOptionalTrimmed(
+        receipt.originalFilename,
+      ),
+      receipt_mime_type: normalizeOptionalTrimmed(receipt.mimeType),
+      receipt_file_size: fileSize,
+      receipt_uploaded_at: new Date(),
+      receipt_uploaded_by_user_id: userId,
+    };
+  }
+
+  private async deleteReceiptFile(fileUrl: string | null) {
+    if (!fileUrl) {
+      return;
+    }
+
+    await this.expenseReceiptStorageService.deleteFiles([fileUrl]);
+  }
+
   private baseExpenseQuery() {
     return this.db
       .selectFrom('finance.expenses')
@@ -451,6 +595,13 @@ export class ExpensesService {
         'finance.expenses.notes as notes',
         'finance.expenses.voided_at as voided_at',
         'finance.expenses.void_reason as void_reason',
+        'finance.expenses.receipt_file_url as receipt_file_url',
+        'finance.expenses.receipt_public_id as receipt_public_id',
+        'finance.expenses.receipt_original_filename as receipt_original_filename',
+        'finance.expenses.receipt_mime_type as receipt_mime_type',
+        'finance.expenses.receipt_file_size as receipt_file_size',
+        'finance.expenses.receipt_uploaded_at as receipt_uploaded_at',
+        'finance.expenses.receipt_uploaded_by_user_id as receipt_uploaded_by_user_id',
         'finance.expenses.created_by_user_id as created_by_user_id',
         'finance.expenses.updated_by_user_id as updated_by_user_id',
         'finance.expenses.created_at as created_at',
@@ -691,6 +842,17 @@ export class ExpensesService {
       notes: row.notes,
       voidedAt: row.voided_at,
       voidReason: row.void_reason,
+      receipt: row.receipt_file_url
+        ? {
+            fileUrl: row.receipt_file_url,
+            publicId: row.receipt_public_id,
+            originalFilename: row.receipt_original_filename,
+            mimeType: row.receipt_mime_type,
+            fileSize: row.receipt_file_size,
+            uploadedAt: row.receipt_uploaded_at,
+            uploadedByUserId: row.receipt_uploaded_by_user_id,
+          }
+        : null,
       createdByUserId: row.created_by_user_id,
       updatedByUserId: row.updated_by_user_id,
       createdAt: row.created_at,

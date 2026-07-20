@@ -15,6 +15,7 @@ import { AccessTokenGuard } from '../../common/guards/access-token.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { ExpenseReceiptDto } from './dto/expense-receipt.dto';
 import { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
 import { MarkExpensePaidDto } from './dto/mark-expense-paid.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -60,6 +61,22 @@ export class ExpensesController {
     @Body() dto: MarkExpensePaidDto,
   ) {
     return this.expensesService.markPaid(user, id, dto);
+  }
+
+  @Post(':id/receipt')
+  @Roles('admin')
+  replaceReceipt(
+    @CurrentUser() user: CurrentUserType,
+    @Param('id') id: string,
+    @Body() dto: ExpenseReceiptDto,
+  ) {
+    return this.expensesService.replaceReceipt(user, id, dto);
+  }
+
+  @Post(':id/receipt/remove')
+  @Roles('admin')
+  removeReceipt(@CurrentUser() user: CurrentUserType, @Param('id') id: string) {
+    return this.expensesService.removeReceipt(user, id);
   }
 
   @Post(':id/void')

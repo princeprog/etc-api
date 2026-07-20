@@ -22,6 +22,16 @@ export interface ExpenseStaffSummary {
   active: boolean;
 }
 
+export interface ExpenseReceiptResponse {
+  fileUrl: string;
+  publicId: string | null;
+  originalFilename: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  uploadedAt: Date | null;
+  uploadedByUserId: string | null;
+}
+
 export interface ExpenseResponse {
   id: string;
   recurringRuleId: string | null;
@@ -45,6 +55,7 @@ export interface ExpenseResponse {
   notes: string | null;
   voidedAt: Date | null;
   voidReason: string | null;
+  receipt: ExpenseReceiptResponse | null;
   createdByUserId: string;
   updatedByUserId: string | null;
   createdAt: Date;

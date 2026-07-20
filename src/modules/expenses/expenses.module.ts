@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { ActivityHistoryModule } from '../activity-history/activity-history.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { UploadsModule } from '../uploads/uploads.module';
 import { ExpenseCategoriesController } from './expense-categories.controller';
 import { ExpenseCategoriesService } from './expense-categories.service';
 import { ExpenseReportsController } from './expense-reports.controller';
@@ -13,7 +14,12 @@ import { ExpensesController } from './expenses.controller';
 import { ExpensesService } from './expenses.service';
 
 @Module({
-  imports: [AuthModule, ActivityHistoryModule, NotificationsModule],
+  imports: [
+    AuthModule,
+    ActivityHistoryModule,
+    NotificationsModule,
+    UploadsModule,
+  ],
   controllers: [
     ExpensesController,
     ExpenseCategoriesController,
