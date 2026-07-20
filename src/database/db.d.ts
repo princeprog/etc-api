@@ -421,6 +421,8 @@ export interface CrmBuyerLeads {
 export interface CrmFollowUps {
   assignee_user_id: string;
   buyer_lead_id: string | null;
+  cancellation_reason: string | null;
+  cancelled_at: Timestamp | null;
   completed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   due_at: Timestamp;

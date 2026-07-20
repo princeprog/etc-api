@@ -24,7 +24,7 @@ export type BuyerLeadStatus =
   | 'Reserved'
   | 'Won'
   | 'Lost';
-export type FollowUpStatus = 'Due' | 'Completed' | 'Overdue';
+export type FollowUpStatus = 'Due' | 'Completed' | 'Overdue' | 'Cancelled';
 export type LeadType = 'seller' | 'buyer';
 export type VehicleTrackedCostCategory =
   | 'reconditioning'
@@ -224,6 +224,8 @@ export interface FollowUpsTable {
   assignee_user_id: string;
   due_at: Date;
   completed_at: Date | null;
+  cancelled_at: Date | null;
+  cancellation_reason: string | null;
   status: FollowUpStatus;
   note: string;
   outcome_note: string | null;
