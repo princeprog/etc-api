@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -29,6 +30,8 @@ import {
   parseOptionalLeadType,
   parseSort,
 } from './follow-ups.helpers';
+
+const UNIQUE_VIOLATION_CODE = '23505';
 
 @Injectable()
 export class FollowUpsService {
@@ -75,20 +78,41 @@ export class FollowUpsService {
     }
 
     await this.ensureAssigneeExists(dto.assigneeUserId);
+    const existingActive = await this.getActiveRecordForLead(
+      leadType,
+      leadType === 'buyer' ? dto.buyerLeadId! : dto.sellerLeadId!,
+    );
 
-    const inserted = await this.db
-      .insertInto('crm.follow_ups')
-      .values({
-        lead_type: leadType,
-        seller_lead_id: dto.sellerLeadId ?? null,
-        buyer_lead_id: dto.buyerLeadId ?? null,
-        assignee_user_id: dto.assigneeUserId,
-        due_at: new Date(dto.dueAt),
-        status: 'Due',
-        note,
-      })
-      .returning(['id'])
-      .executeTakeFirstOrThrow();
+    if (existingActive) {
+      throw new ConflictException(
+        'An active follow-up already exists for this lead. Reschedule it instead.',
+      );
+    }
+
+    let inserted: { id: string };
+    try {
+      inserted = await this.db
+        .insertInto('crm.follow_ups')
+        .values({
+          lead_type: leadType,
+          seller_lead_id: dto.sellerLeadId ?? null,
+          buyer_lead_id: dto.buyerLeadId ?? null,
+          assignee_user_id: dto.assigneeUserId,
+          due_at: new Date(dto.dueAt),
+          status: 'Due',
+          note,
+        })
+        .returning(['id'])
+        .executeTakeFirstOrThrow();
+    } catch (error) {
+      if (this.isDatabaseError(error) && error.code === UNIQUE_VIOLATION_CODE) {
+        throw new ConflictException(
+          'An active follow-up already exists for this lead. Reschedule it instead.',
+        );
+      }
+
+      throw error;
+    }
 
     await this.activityHistoryService.write({
       actor: user,
@@ -137,17 +161,29 @@ export class FollowUpsService {
       .leftJoin('crm.seller_leads as sl', 'sl.id', 'fu.seller_lead_id')
       .leftJoin('crm.buyer_leads as bl', 'bl.id', 'fu.buyer_lead_id')
       .$if(status === 'Completed', (qb) =>
-        qb.where('fu.completed_at', 'is not', null),
+        qb
+          .where('fu.completed_at', 'is not', null)
+          .where('fu.cancelled_at', 'is', null),
+      )
+      .$if(status === 'Cancelled', (qb) =>
+        qb.where('fu.cancelled_at', 'is not', null),
       )
       .$if(status === 'Overdue', (qb) =>
-        qb.where('fu.completed_at', 'is', null).where('fu.due_at', '<', now),
+        qb
+          .where('fu.completed_at', 'is', null)
+          .where('fu.cancelled_at', 'is', null)
+          .where('fu.due_at', '<', now),
       )
       .$if(status === 'Due', (qb) =>
-        qb.where('fu.completed_at', 'is', null).where('fu.due_at', '>=', now),
+        qb
+          .where('fu.completed_at', 'is', null)
+          .where('fu.cancelled_at', 'is', null)
+          .where('fu.due_at', '>=', now),
       )
       .$if(status === 'DueToday', (qb) =>
         qb
           .where('fu.completed_at', 'is', null)
+          .where('fu.cancelled_at', 'is', null)
           .where('fu.due_at', '>=', todayStart)
           .where('fu.due_at', '<', tomorrowStart),
       )
@@ -186,7 +222,7 @@ export class FollowUpsService {
         case 'leadName':
           return sql`COALESCE(sl.seller_name, bl.buyer_name)`;
         case 'status':
-          return sql`CASE WHEN fu.completed_at IS NOT NULL THEN 2 WHEN fu.due_at < ${now} THEN 0 ELSE 1 END`;
+          return sql`CASE WHEN fu.cancelled_at IS NOT NULL THEN 3 WHEN fu.completed_at IS NOT NULL THEN 2 WHEN fu.due_at < ${now} THEN 0 ELSE 1 END`;
         case 'updatedAt':
           return sql`fu.updated_at`;
         case 'dueAt':
@@ -204,6 +240,8 @@ export class FollowUpsService {
         'fu.assignee_user_id',
         'fu.due_at',
         'fu.completed_at',
+        'fu.cancelled_at',
+        'fu.cancellation_reason',
         'fu.status',
         'fu.note',
         'fu.outcome_note',
@@ -234,7 +272,12 @@ export class FollowUpsService {
       return mapFollowUpResponse({
         ...row,
         lead_type: rowLeadType,
-        status: deriveFollowUpStatus(row.completed_at, row.due_at, now),
+        status: deriveFollowUpStatus(
+          row.completed_at,
+          row.cancelled_at,
+          row.due_at,
+          now,
+        ),
         lead_name: leadName,
         lead_secondary: leadSecondary,
       });
@@ -274,21 +317,30 @@ export class FollowUpsService {
 
     const [overdue, dueToday, upcoming, completed] = await Promise.all([
       this.countFollowUps(
-        scoped().where('completed_at', 'is', null).where('due_at', '<', now),
+        scoped()
+          .where('completed_at', 'is', null)
+          .where('cancelled_at', 'is', null)
+          .where('due_at', '<', now),
       ),
       this.countFollowUps(
         scoped()
           .where('completed_at', 'is', null)
+          .where('cancelled_at', 'is', null)
           .where('due_at', '>=', todayStart)
           .where('due_at', '<', tomorrowStart),
       ),
       this.countFollowUps(
         scoped()
           .where('completed_at', 'is', null)
+          .where('cancelled_at', 'is', null)
           .where('due_at', '>', now)
           .where('due_at', '<=', upcomingHorizon),
       ),
-      this.countFollowUps(scoped().where('completed_at', 'is not', null)),
+      this.countFollowUps(
+        scoped()
+          .where('completed_at', 'is not', null)
+          .where('cancelled_at', 'is', null),
+      ),
     ]);
 
     return { summary: { overdue, dueToday, upcoming, completed } };
@@ -298,11 +350,34 @@ export class FollowUpsService {
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
 
-  async update(id: string, dto: UpdateFollowUpDto) {
+  async findActive(
+    leadTypeValue: string | undefined,
+    leadId: string | undefined,
+  ) {
+    const leadType = parseLeadType(leadTypeValue ?? '');
+
+    if (!leadId?.trim()) {
+      throw new BadRequestException('leadId is required');
+    }
+
+    const followUp = await this.getActiveRecordForLead(leadType, leadId);
+
+    if (!followUp) {
+      return { followUp: null };
+    }
+
+    return { followUp: await this.mapRecordToResponse(followUp) };
+  }
+
+  async update(user: CurrentUser, id: string, dto: UpdateFollowUpDto) {
     const followUp = await this.getRecordOrThrow(id);
 
     if (followUp.completed_at) {
       throw new BadRequestException('Completed follow-ups cannot be edited');
+    }
+
+    if (followUp.cancelled_at) {
+      throw new BadRequestException('Cancelled follow-ups cannot be edited');
     }
 
     const updateValues: {
@@ -346,9 +421,39 @@ export class FollowUpsService {
       .set(updateValues)
       .where('id', '=', id)
       .execute();
+
+    await this.activityHistoryService.write({
+      actor: user,
+      entityType: 'follow_up',
+      entityId: id,
+      actionType: 'follow_up.updated',
+      summary: 'Follow-up updated',
+      metadata: {
+        leadType: followUp.lead_type,
+        sellerLeadId: followUp.seller_lead_id,
+        buyerLeadId: followUp.buyer_lead_id,
+        previousDueAt: followUp.due_at.toISOString(),
+        nextDueAt:
+          updateValues.due_at?.toISOString() ?? followUp.due_at.toISOString(),
+        assigneeUserId:
+          updateValues.assignee_user_id ?? followUp.assignee_user_id,
+        changedFields: [
+          updateValues.due_at ? 'dueAt' : null,
+          updateValues.note ? 'note' : null,
+          updateValues.assignee_user_id ? 'assigneeUserId' : null,
+        ].filter(Boolean),
+      },
+    });
+
+    const updatedFollowUp = await this.getRecordOrThrow(id);
+    await this.writeLeadFollowUpActivity(
+      user,
+      updatedFollowUp,
+      updateValues.due_at ? 'rescheduled' : 'updated',
+    );
     await this.notificationsService.refreshForFollowUp(id);
 
-    return { followUp: await this.getFollowUpOrThrow(id) };
+    return { followUp: await this.mapRecordToResponse(updatedFollowUp) };
   }
   async complete(user: CurrentUser, id: string, dto: CompleteFollowUpDto) {
     const followUp = await this.getRecordOrThrow(id);
@@ -360,6 +465,10 @@ export class FollowUpsService {
 
     if (followUp.completed_at) {
       throw new BadRequestException('Follow-up is already completed');
+    }
+
+    if (followUp.cancelled_at) {
+      throw new BadRequestException('Cancelled follow-ups cannot be completed');
     }
 
     await this.db
@@ -405,7 +514,7 @@ export class FollowUpsService {
   private async writeLeadFollowUpActivity(
     user: CurrentUser,
     followUp: Awaited<ReturnType<FollowUpsService['getRecordOrThrow']>>,
-    action: 'scheduled' | 'completed',
+    action: 'scheduled' | 'updated' | 'rescheduled' | 'completed',
   ) {
     const entityType =
       followUp.lead_type === 'buyer' ? 'buyer_lead' : 'seller_lead';
@@ -423,10 +532,7 @@ export class FollowUpsService {
       entityType,
       entityId,
       actionType: `${entityType}.follow_up_${action}`,
-      summary:
-        action === 'scheduled'
-          ? 'Follow-up scheduled for lead'
-          : 'Lead follow-up completed',
+      summary: this.getLeadFollowUpActivitySummary(action),
       metadata: {
         followUpId: followUp.id,
         dueAt: followUp.due_at.toISOString(),
@@ -437,12 +543,23 @@ export class FollowUpsService {
 
   private async getFollowUpOrThrow(id: string) {
     const followUp = await this.getRecordOrThrow(id);
-    const now = new Date();
 
+    return this.mapRecordToResponse(followUp);
+  }
+
+  private async mapRecordToResponse(
+    followUp: Awaited<ReturnType<FollowUpsService['getRecordOrThrow']>>,
+  ) {
+    const now = new Date();
     return mapFollowUpResponse({
       ...followUp,
       lead_type: parseLeadType(followUp.lead_type),
-      status: deriveFollowUpStatus(followUp.completed_at, followUp.due_at, now),
+      status: deriveFollowUpStatus(
+        followUp.completed_at,
+        followUp.cancelled_at,
+        followUp.due_at,
+        now,
+      ),
     });
   }
 
@@ -458,6 +575,40 @@ export class FollowUpsService {
     }
 
     return followUp;
+  }
+
+  private async getActiveRecordForLead(
+    leadType: 'buyer' | 'seller',
+    leadId: string,
+  ) {
+    return this.db
+      .selectFrom('crm.follow_ups')
+      .selectAll()
+      .where(
+        leadType === 'buyer' ? 'buyer_lead_id' : 'seller_lead_id',
+        '=',
+        leadId,
+      )
+      .where('completed_at', 'is', null)
+      .where('cancelled_at', 'is', null)
+      .orderBy('created_at', 'desc')
+      .orderBy('id', 'desc')
+      .executeTakeFirst();
+  }
+
+  private getLeadFollowUpActivitySummary(
+    action: 'scheduled' | 'updated' | 'rescheduled' | 'completed',
+  ) {
+    switch (action) {
+      case 'scheduled':
+        return 'Follow-up scheduled for lead';
+      case 'updated':
+        return 'Lead follow-up updated';
+      case 'rescheduled':
+        return 'Lead follow-up rescheduled';
+      case 'completed':
+        return 'Lead follow-up completed';
+    }
   }
 
   private async ensureBuyerLeadExists(id: string) {
@@ -494,5 +645,9 @@ export class FollowUpsService {
     if (!user) {
       throw new NotFoundException(`Assignee ${id} was not found`);
     }
+  }
+
+  private isDatabaseError(error: unknown): error is { code?: string } {
+    return typeof error === 'object' && error !== null && 'code' in error;
   }
 }

@@ -1,6 +1,15 @@
-import type { LeadPipelineBlocker, LeadPipelineNextAction, LeadPipelineState } from './lead-pipeline.types';
+import type {
+  LeadPipelineBlocker,
+  LeadPipelineNextAction,
+  LeadPipelineState,
+} from './lead-pipeline.types';
 import type { BuyerLeadPipelineContext } from './lead-pipeline.contexts';
-import { getLatestDate, getPipelineStaleLeadDays, isPipelineStale, resolveLastActivityAt } from './lead-pipeline.utils';
+import {
+  getLatestDate,
+  getPipelineStaleLeadDays,
+  isPipelineStale,
+  resolveLastActivityAt,
+} from './lead-pipeline.utils';
 
 export function buildBuyerLeadPipeline(
   lead: BuyerLeadPipelineContext,
@@ -11,9 +20,14 @@ export function buildBuyerLeadPipeline(
   const lastActivityAt = resolveLastActivityAt(lead);
   const isClosed = lead.status === 'Won' || lead.status === 'Lost';
   const isStale = !isClosed && isPipelineStale(lastActivityAt, staleAfterDays);
-  const openFollowUps = lead.followUps.filter((followUp) => !followUp.completedAt);
+  const usableFollowUps = lead.followUps.filter(
+    (followUp) => !followUp.cancelledAt,
+  );
+  const openFollowUps = usableFollowUps.filter(
+    (followUp) => !followUp.completedAt,
+  );
   const completedFollowUps = lead.followUps.filter(
-    (followUp) => followUp.completedAt,
+    (followUp) => !followUp.cancelledAt && followUp.completedAt,
   );
   const hasMeaningfulContact = lead.status !== 'New Inquiry';
   const hasUpcomingFollowUp = openFollowUps.some(
@@ -28,7 +42,8 @@ export function buildBuyerLeadPipeline(
     blockers.push({
       code: 'buyer_contact_missing',
       label: 'Missing contact details',
-      description: 'Add buyer contact information before progressing this lead.',
+      description:
+        'Add buyer contact information before progressing this lead.',
       severity: 'critical',
       target: 'lead_edit',
     });
@@ -58,7 +73,8 @@ export function buildBuyerLeadPipeline(
     blockers.push({
       code: 'buyer_already_won',
       label: 'Lead already won',
-      description: 'This buyer is already won and cannot be used for a new sale.',
+      description:
+        'This buyer is already won and cannot be used for a new sale.',
       severity: 'info',
       target: 'sale_finalization',
     });
@@ -94,7 +110,7 @@ export function buildBuyerLeadPipeline(
     stage = 'active_buyer';
     stageLabel = 'Active Buyer';
     progressPercent = 60;
-  } else if (hasMeaningfulContact || lead.followUps.length > 0) {
+  } else if (hasMeaningfulContact || usableFollowUps.length > 0) {
     stage = 'contacted_follow_up';
     stageLabel = 'Contacted / In Follow-up';
     progressPercent = 30;
@@ -108,7 +124,8 @@ export function buildBuyerLeadPipeline(
     nextAction = {
       code: 'review_stale_lead',
       label: 'Review stale lead',
-      description: 'Reconnect with this buyer lead and confirm whether it should still progress.',
+      description:
+        'Reconnect with this buyer lead and confirm whether it should still progress.',
       target: 'follow_up',
     };
   } else if (!hasUpcomingFollowUp) {
@@ -145,7 +162,9 @@ export function buildBuyerLeadPipeline(
     isStale,
     context: {
       openFollowUpCount: openFollowUps.length,
-      latestFollowUpAt: getLatestDate(openFollowUps.map((followUp) => followUp.dueAt)),
+      latestFollowUpAt: getLatestDate(
+        openFollowUps.map((followUp) => followUp.dueAt),
+      ),
       latestCompletedFollowUpAt: getLatestDate(
         completedFollowUps
           .map((followUp) => followUp.completedAt)

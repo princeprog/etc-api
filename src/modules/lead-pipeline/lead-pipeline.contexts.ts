@@ -22,6 +22,7 @@ export type BuyerLeadPipelineContext = {
   followUps: Array<{
     dueAt: Date;
     completedAt: Date | null;
+    cancelledAt: Date | null;
   }>;
   sales: Array<{
     id: string;
@@ -46,5 +47,6 @@ export type SellerLeadPipelineContext = {
   followUps: Array<{
     dueAt: Date;
     completedAt: Date | null;
+    cancelledAt: Date | null;
   }>;
 };

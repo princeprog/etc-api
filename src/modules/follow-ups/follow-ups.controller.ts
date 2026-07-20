@@ -40,14 +40,26 @@ export class FollowUpsController {
     return this.followUpsService.summary(assigneeUserId);
   }
 
+  @Get('active')
+  findActive(
+    @Query('leadType') leadType?: string,
+    @Query('leadId') leadId?: string,
+  ) {
+    return this.followUpsService.findActive(leadType, leadId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.followUpsService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateFollowUpDto) {
-    return this.followUpsService.update(id, dto);
+  update(
+    @CurrentUser() user: CurrentUserType,
+    @Param('id') id: string,
+    @Body() dto: UpdateFollowUpDto,
+  ) {
+    return this.followUpsService.update(user, id, dto);
   }
 
   @HttpCode(200)

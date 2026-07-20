@@ -343,6 +343,7 @@ export class DashboardService {
       this.db
         .selectFrom('crm.follow_ups')
         .where('completed_at', 'is', null)
+        .where('cancelled_at', 'is', null)
         .$if(Boolean(assigneeUserId), (builder) =>
           builder.where('assignee_user_id', '=', assigneeUserId!),
         );
@@ -472,6 +473,7 @@ export class DashboardService {
       )
       .where('follow_up.assignee_user_id', '=', userId)
       .where('follow_up.completed_at', 'is', null)
+      .where('follow_up.cancelled_at', 'is', null)
       .where('follow_up.due_at', '<=', horizon)
       .select([
         'follow_up.id',

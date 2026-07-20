@@ -1,6 +1,15 @@
-import type { LeadPipelineBlocker, LeadPipelineNextAction, LeadPipelineState } from './lead-pipeline.types';
+import type {
+  LeadPipelineBlocker,
+  LeadPipelineNextAction,
+  LeadPipelineState,
+} from './lead-pipeline.types';
 import type { SellerLeadPipelineContext } from './lead-pipeline.contexts';
-import { getLatestDate, getPipelineStaleLeadDays, isPipelineStale, resolveLastActivityAt } from './lead-pipeline.utils';
+import {
+  getLatestDate,
+  getPipelineStaleLeadDays,
+  isPipelineStale,
+  resolveLastActivityAt,
+} from './lead-pipeline.utils';
 
 export function buildSellerLeadPipeline(
   lead: SellerLeadPipelineContext,
@@ -11,15 +20,22 @@ export function buildSellerLeadPipeline(
   const lastActivityAt = resolveLastActivityAt(lead);
   const isClosed = lead.status === 'Purchased' || lead.status === 'Rejected';
   const isStale = !isClosed && isPipelineStale(lastActivityAt, staleAfterDays);
-  const openFollowUps = lead.followUps.filter((followUp) => !followUp.completedAt);
+  const usableFollowUps = lead.followUps.filter(
+    (followUp) => !followUp.cancelledAt,
+  );
+  const openFollowUps = usableFollowUps.filter(
+    (followUp) => !followUp.completedAt,
+  );
   const completedFollowUps = lead.followUps.filter(
-    (followUp) => followUp.completedAt,
+    (followUp) => !followUp.cancelledAt && followUp.completedAt,
   );
   const hasUpcomingFollowUp = openFollowUps.some(
     (followUp) => !followUp.completedAt && followUp.dueAt >= new Date(),
   );
   const hasVehicleDetails = Boolean(
-    lead.vehicleBrand.trim() && lead.vehicleModel.trim() && lead.vehicleYear !== null,
+    lead.vehicleBrand.trim() &&
+    lead.vehicleModel.trim() &&
+    lead.vehicleYear !== null,
   );
   const hasAskingPrice = Boolean(lead.askingPrice);
   const readyForReview =
@@ -31,7 +47,8 @@ export function buildSellerLeadPipeline(
     blockers.push({
       code: 'seller_contact_missing',
       label: 'Missing contact details',
-      description: 'Add seller contact information before progressing this lead.',
+      description:
+        'Add seller contact information before progressing this lead.',
       severity: 'critical',
       target: 'lead_edit',
     });
@@ -51,7 +68,8 @@ export function buildSellerLeadPipeline(
     blockers.push({
       code: 'seller_vehicle_details_missing',
       label: 'Vehicle details incomplete',
-      description: 'Complete the brand, model, and year before acquisition review.',
+      description:
+        'Complete the brand, model, and year before acquisition review.',
       severity: 'critical',
       target: 'lead_edit',
     });
@@ -71,7 +89,8 @@ export function buildSellerLeadPipeline(
     blockers.push({
       code: 'seller_already_converted',
       label: 'Lead already converted',
-      description: 'This seller lead has already resulted in an inventory vehicle.',
+      description:
+        'This seller lead has already resulted in an inventory vehicle.',
       severity: 'info',
       target: 'vehicle_create',
     });
@@ -116,7 +135,7 @@ export function buildSellerLeadPipeline(
     stage = 'vehicle_details_captured';
     stageLabel = 'Vehicle Details Captured';
     progressPercent = 45;
-  } else if (lead.followUps.length > 0 || lead.status !== 'New Inquiry') {
+  } else if (usableFollowUps.length > 0 || lead.status !== 'New Inquiry') {
     stage = 'contacted_follow_up';
     stageLabel = 'Contacted / In Follow-up';
     progressPercent = 25;
@@ -130,7 +149,8 @@ export function buildSellerLeadPipeline(
     nextAction = {
       code: 'review_stale_seller_lead',
       label: 'Review stale seller lead',
-      description: 'Reconnect with this seller and confirm whether acquisition should continue.',
+      description:
+        'Reconnect with this seller and confirm whether acquisition should continue.',
       target: 'follow_up',
     };
   } else if (!hasUpcomingFollowUp) {
@@ -144,21 +164,24 @@ export function buildSellerLeadPipeline(
     nextAction = {
       code: 'complete_vehicle_details',
       label: 'Complete vehicle details',
-      description: 'Fill in the missing vehicle details and seller asking price needed for review.',
+      description:
+        'Fill in the missing vehicle details and seller asking price needed for review.',
       target: 'lead_edit',
     };
   } else if (lead.status !== 'Approved to Buy') {
     nextAction = {
       code: 'review_acquisition_decision',
       label: 'Review acquisition decision',
-      description: 'Review the inspection details before deciding the acquisition path.',
+      description:
+        'Review the inspection details before deciding the acquisition path.',
       target: 'lead_edit',
     };
   } else {
     nextAction = {
       code: 'create_inventory_vehicle',
       label: 'Create inventory vehicle',
-      description: 'Convert this approved seller lead into an inventory vehicle record.',
+      description:
+        'Convert this approved seller lead into an inventory vehicle record.',
       target: 'vehicle_create',
     };
   }
@@ -174,7 +197,9 @@ export function buildSellerLeadPipeline(
     isStale,
     context: {
       openFollowUpCount: openFollowUps.length,
-      latestFollowUpAt: getLatestDate(openFollowUps.map((followUp) => followUp.dueAt)),
+      latestFollowUpAt: getLatestDate(
+        openFollowUps.map((followUp) => followUp.dueAt),
+      ),
       latestCompletedFollowUpAt: getLatestDate(
         completedFollowUps
           .map((followUp) => followUp.completedAt)

@@ -145,7 +145,9 @@ export class SellerLeadsService {
     }
 
     let total = 0;
-    let sellerLeadItems: Awaited<ReturnType<SellerLeadsService['buildSellerLeadResponses']>> = [];
+    let sellerLeadItems: Awaited<
+      ReturnType<SellerLeadsService['buildSellerLeadResponses']>
+    > = [];
 
     if (query.pipelineState) {
       const allSellerLeads = await sellerLeadsQuery
@@ -183,11 +185,7 @@ export class SellerLeadsService {
       );
     }
 
-    const response = buildPaginatedResponse(
-      sellerLeadItems,
-      pagination,
-      total,
-    );
+    const response = buildPaginatedResponse(sellerLeadItems, pagination, total);
 
     return {
       sellerLeads: response.items,
@@ -214,13 +212,16 @@ export class SellerLeadsService {
         ? parseSellerLeadStatus(updateSellerLeadDto.status, existingLead.status)
         : existingLead.status;
 
-    if (existingLead.status === 'Rejected' && nextStatus === 'Approved to Buy') {
+    if (
+      existingLead.status === 'Rejected' &&
+      nextStatus === 'Approved to Buy'
+    ) {
       throw new BadRequestException('Rejected seller leads cannot be approved');
     }
 
     const nextAssigneeUserId =
       updateSellerLeadDto.assigneeUserId !== undefined
-        ? updateSellerLeadDto.assigneeUserId ?? null
+        ? (updateSellerLeadDto.assigneeUserId ?? null)
         : existingLead.assignee_user_id;
 
     await this.db
@@ -274,7 +275,11 @@ export class SellerLeadsService {
           ? { vehicle_variant: updateSellerLeadDto.vehicleVariant ?? null }
           : {}),
         ...(updateSellerLeadDto.askingPrice !== undefined
-          ? { asking_price: normalizeOptionalMoney(updateSellerLeadDto.askingPrice) }
+          ? {
+              asking_price: normalizeOptionalMoney(
+                updateSellerLeadDto.askingPrice,
+              ),
+            }
           : {}),
         ...(updateSellerLeadDto.region !== undefined
           ? { region: updateSellerLeadDto.region ?? null }
@@ -305,7 +310,9 @@ export class SellerLeadsService {
         ...(updateSellerLeadDto.decisionNote !== undefined
           ? { decision_note: updateSellerLeadDto.decisionNote ?? null }
           : {}),
-        ...(updateSellerLeadDto.status !== undefined ? { status: nextStatus } : {}),
+        ...(updateSellerLeadDto.status !== undefined
+          ? { status: nextStatus }
+          : {}),
         ...(updateSellerLeadDto.status === 'Approved to Buy'
           ? {
               approved_to_buy_at: new Date(),
@@ -340,24 +347,37 @@ export class SellerLeadsService {
           : existingLead.seller_name,
       vehicle_brand:
         updateSellerLeadDto.vehicleBrand !== undefined
-          ? this.requireNonEmpty(updateSellerLeadDto.vehicleBrand, 'vehicleBrand')
+          ? this.requireNonEmpty(
+              updateSellerLeadDto.vehicleBrand,
+              'vehicleBrand',
+            )
           : existingLead.vehicle_brand,
       vehicle_model:
         updateSellerLeadDto.vehicleModel !== undefined
-          ? this.requireNonEmpty(updateSellerLeadDto.vehicleModel, 'vehicleModel')
+          ? this.requireNonEmpty(
+              updateSellerLeadDto.vehicleModel,
+              'vehicleModel',
+            )
           : existingLead.vehicle_model,
       asking_price:
         updateSellerLeadDto.askingPrice !== undefined
-          ? updateSellerLeadDto.askingPrice ?? null
+          ? (updateSellerLeadDto.askingPrice ?? null)
           : existingLead.asking_price,
-      notes: updateSellerLeadDto.notes !== undefined ? updateSellerLeadDto.notes ?? null : existingLead.notes,
+      notes:
+        updateSellerLeadDto.notes !== undefined
+          ? (updateSellerLeadDto.notes ?? null)
+          : existingLead.notes,
     });
 
     const sellerLead = await this.getLeadRecordOrThrow(id);
     return { sellerLead: await this.buildSellerLeadResponse(sellerLead) };
   }
 
-  async convert(user: CurrentUser, id: string, convertSellerLeadDto: ConvertSellerLeadDto) {
+  async convert(
+    user: CurrentUser,
+    id: string,
+    convertSellerLeadDto: ConvertSellerLeadDto,
+  ) {
     return this.db.transaction().execute(async (trx) => {
       const sellerLead = await this.getLeadRecordOrThrow(id, trx);
 
@@ -404,8 +424,7 @@ export class SellerLeadsService {
         features: convertSellerLeadDto.features,
         remarks: convertSellerLeadDto.remarks,
         purchasePrice:
-          convertSellerLeadDto.purchasePrice ??
-          sellerLead.asking_price,
+          convertSellerLeadDto.purchasePrice ?? sellerLead.asking_price,
         targetSellingPrice: convertSellerLeadDto.targetSellingPrice,
         minimumAcceptablePrice: convertSellerLeadDto.minimumAcceptablePrice,
         acquisitionSource:
@@ -535,25 +554,26 @@ export class SellerLeadsService {
       [sellerLead.id],
       executor,
     );
-    const pipelineByLeadId = await this.leadPipelineService.buildSellerLeadPipelines([
-      {
-        id: sellerLead.id,
-        status: sellerLead.status,
-        contactNumber: sellerLead.contact_number,
-        email: sellerLead.email,
-        facebookName: sellerLead.facebook_name,
-        vehicleBrand: sellerLead.vehicle_brand,
-        vehicleModel: sellerLead.vehicle_model,
-        vehicleYear: sellerLead.vehicle_year,
-        askingPrice: sellerLead.asking_price,
-        assigneeUserId: sellerLead.assignee_user_id,
-        latestActivityAt: sellerLead.latest_activity_at,
-        createdAt: sellerLead.created_at,
-        updatedAt: sellerLead.updated_at,
-        followUps: pipelineContext.get(sellerLead.id)?.followUps ?? [],
-        vehicleId: pipelineContext.get(sellerLead.id)?.vehicleId ?? null,
-      },
-    ]);
+    const pipelineByLeadId =
+      await this.leadPipelineService.buildSellerLeadPipelines([
+        {
+          id: sellerLead.id,
+          status: sellerLead.status,
+          contactNumber: sellerLead.contact_number,
+          email: sellerLead.email,
+          facebookName: sellerLead.facebook_name,
+          vehicleBrand: sellerLead.vehicle_brand,
+          vehicleModel: sellerLead.vehicle_model,
+          vehicleYear: sellerLead.vehicle_year,
+          askingPrice: sellerLead.asking_price,
+          assigneeUserId: sellerLead.assignee_user_id,
+          latestActivityAt: sellerLead.latest_activity_at,
+          createdAt: sellerLead.created_at,
+          updatedAt: sellerLead.updated_at,
+          followUps: pipelineContext.get(sellerLead.id)?.followUps ?? [],
+          vehicleId: pipelineContext.get(sellerLead.id)?.vehicleId ?? null,
+        },
+      ]);
 
     return mapSellerLeadResponse({
       ...sellerLead,
@@ -572,25 +592,26 @@ export class SellerLeadsService {
 
     const pipelineContext = await this.getSellerLeadPipelineContext(leadIds);
 
-    const pipelineByLeadId = await this.leadPipelineService.buildSellerLeadPipelines(
-      sellerLeads.map((lead) => ({
-        id: lead.id,
-        status: lead.status,
-        contactNumber: lead.contact_number,
-        email: lead.email,
-        facebookName: lead.facebook_name,
-        vehicleBrand: lead.vehicle_brand,
-        vehicleModel: lead.vehicle_model,
-        vehicleYear: lead.vehicle_year,
-        askingPrice: lead.asking_price,
-        assigneeUserId: lead.assignee_user_id,
-        latestActivityAt: lead.latest_activity_at,
-        createdAt: lead.created_at,
-        updatedAt: lead.updated_at,
-        followUps: pipelineContext.get(lead.id)?.followUps ?? [],
-        vehicleId: pipelineContext.get(lead.id)?.vehicleId ?? null,
-      })),
-    );
+    const pipelineByLeadId =
+      await this.leadPipelineService.buildSellerLeadPipelines(
+        sellerLeads.map((lead) => ({
+          id: lead.id,
+          status: lead.status,
+          contactNumber: lead.contact_number,
+          email: lead.email,
+          facebookName: lead.facebook_name,
+          vehicleBrand: lead.vehicle_brand,
+          vehicleModel: lead.vehicle_model,
+          vehicleYear: lead.vehicle_year,
+          askingPrice: lead.asking_price,
+          assigneeUserId: lead.assignee_user_id,
+          latestActivityAt: lead.latest_activity_at,
+          createdAt: lead.created_at,
+          updatedAt: lead.updated_at,
+          followUps: pipelineContext.get(lead.id)?.followUps ?? [],
+          vehicleId: pipelineContext.get(lead.id)?.vehicleId ?? null,
+        })),
+      );
 
     return sellerLeads.map((lead) =>
       mapSellerLeadResponse({
@@ -605,13 +626,19 @@ export class SellerLeadsService {
     executor?: Kysely<DB> | Transaction<DB>,
   ) {
     if (!executor) {
-      return this.leadPipelineService.getSellerLeadPipelineContext(sellerLeadIds);
+      return this.leadPipelineService.getSellerLeadPipelineContext(
+        sellerLeadIds,
+      );
     }
 
     const byLeadId = new Map<
       string,
       {
-        followUps: Array<{ dueAt: Date; completedAt: Date | null }>;
+        followUps: Array<{
+          dueAt: Date;
+          completedAt: Date | null;
+          cancelledAt: Date | null;
+        }>;
         vehicleId: string | null;
       }
     >();
@@ -627,6 +654,7 @@ export class SellerLeadsService {
           'seller_lead_id as sellerLeadId',
           'due_at as dueAt',
           'completed_at as completedAt',
+          'cancelled_at as cancelledAt',
         ])
         .where('seller_lead_id', 'in', sellerLeadIds)
         .orderBy('due_at', 'desc')
@@ -649,6 +677,7 @@ export class SellerLeadsService {
       byLeadId.get(row.sellerLeadId)?.followUps.push({
         dueAt: row.dueAt,
         completedAt: row.completedAt,
+        cancelledAt: row.cancelledAt,
       });
     }
 
@@ -700,8 +729,13 @@ export class SellerLeadsService {
           entityType: 'seller_lead',
           entityId: previous.id,
           actionType: 'seller_lead.assignment_changed',
-          summary: next.assignee_user_id ? 'Seller lead assignment changed' : 'Seller lead unassigned',
-          metadata: { from: previous.assignee_user_id, to: next.assignee_user_id },
+          summary: next.assignee_user_id
+            ? 'Seller lead assignment changed'
+            : 'Seller lead unassigned',
+          metadata: {
+            from: previous.assignee_user_id,
+            to: next.assignee_user_id,
+          },
         }),
       );
     }
@@ -723,9 +757,15 @@ export class SellerLeadsService {
           metadata: {
             changedFields: [
               previous.seller_name !== next.seller_name ? 'sellerName' : null,
-              previous.vehicle_brand !== next.vehicle_brand ? 'vehicleBrand' : null,
-              previous.vehicle_model !== next.vehicle_model ? 'vehicleModel' : null,
-              previous.asking_price !== next.asking_price ? 'askingPrice' : null,
+              previous.vehicle_brand !== next.vehicle_brand
+                ? 'vehicleBrand'
+                : null,
+              previous.vehicle_model !== next.vehicle_model
+                ? 'vehicleModel'
+                : null,
+              previous.asking_price !== next.asking_price
+                ? 'askingPrice'
+                : null,
               previous.notes !== next.notes ? 'notes' : null,
             ].filter(Boolean),
           },
@@ -812,5 +852,4 @@ export class SellerLeadsService {
 
     throw new BadRequestException(`Unsupported sort order: ${sortOrder}`);
   }
-
 }

@@ -11,6 +11,7 @@ const FOLLOW_UP_STATUS_FILTERS: FollowUpStatusFilter[] = [
   'Due',
   'Completed',
   'Overdue',
+  'Cancelled',
   'DueToday',
 ];
 const LEAD_TYPES: LeadType[] = ['seller', 'buyer'];
@@ -36,12 +37,13 @@ export const DEFAULT_SORT: FollowUpSort = 'dueAt';
 
 /**
  * Follow-up status is DERIVED, never stored as `Overdue`. The `status` column
- * only ever holds `Due` or `Completed`. Effective status for a row is:
+ * only ever holds `Due`, `Completed`, or `Cancelled`. Effective status for a row is:
+ *   - `Cancelled` -> cancelled_at IS NOT NULL
  *   - `Completed` -> completed_at IS NOT NULL
- *   - `Overdue`   -> completed_at IS NULL AND due_at <  now
- *   - `Due`       -> completed_at IS NULL AND due_at >= now
+ *   - `Overdue`   -> no terminal timestamp AND due_at <  now
+ *   - `Due`       -> no terminal timestamp AND due_at >= now
  *
- * Summary sub-buckets (all exclude completed rows):
+ * Summary sub-buckets (all exclude completed and cancelled rows):
  *   - dueToday  -> due_at within [todayStart, tomorrowStart)
  *   - upcoming  -> due_at within (now, now + 7 days]
  *   - overdue   -> due_at < now
@@ -49,9 +51,14 @@ export const DEFAULT_SORT: FollowUpSort = 'dueAt';
  */
 export function deriveFollowUpStatus(
   completedAt: Date | null,
+  cancelledAt: Date | null,
   dueAt: Date,
   now = new Date(),
 ): FollowUpStatus {
+  if (cancelledAt) {
+    return 'Cancelled';
+  }
+
   if (completedAt) {
     return 'Completed';
   }
@@ -150,6 +157,8 @@ export function mapFollowUpResponse(followUp: {
   assignee_user_id: string;
   due_at: Date;
   completed_at: Date | null;
+  cancelled_at: Date | null;
+  cancellation_reason: string | null;
   status: FollowUpStatus;
   note: string;
   outcome_note: string | null;
@@ -166,6 +175,8 @@ export function mapFollowUpResponse(followUp: {
     assigneeUserId: followUp.assignee_user_id,
     dueAt: followUp.due_at,
     completedAt: followUp.completed_at,
+    cancelledAt: followUp.cancelled_at,
+    cancellationReason: followUp.cancellation_reason,
     status: followUp.status,
     note: followUp.note,
     outcomeNote: followUp.outcome_note,

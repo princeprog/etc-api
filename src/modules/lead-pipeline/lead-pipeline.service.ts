@@ -64,6 +64,7 @@ export class LeadPipelineService {
           'buyer_lead_id as buyerLeadId',
           'due_at as dueAt',
           'completed_at as completedAt',
+          'cancelled_at as cancelledAt',
         ])
         .where('buyer_lead_id', 'in', buyerLeadIds)
         .orderBy('due_at', 'desc')
@@ -86,6 +87,7 @@ export class LeadPipelineService {
       byLeadId.get(row.buyerLeadId)?.followUps.push({
         dueAt: row.dueAt,
         completedAt: row.completedAt,
+        cancelledAt: row.cancelledAt,
       });
     }
 
@@ -116,6 +118,7 @@ export class LeadPipelineService {
           'seller_lead_id as sellerLeadId',
           'due_at as dueAt',
           'completed_at as completedAt',
+          'cancelled_at as cancelledAt',
         ])
         .where('seller_lead_id', 'in', sellerLeadIds)
         .orderBy('due_at', 'desc')
@@ -138,6 +141,7 @@ export class LeadPipelineService {
       byLeadId.get(row.sellerLeadId)?.followUps.push({
         dueAt: row.dueAt,
         completedAt: row.completedAt,
+        cancelledAt: row.cancelledAt,
       });
     }
 
@@ -161,7 +165,9 @@ export class LeadPipelineService {
   ) {
     switch (pipelineState) {
       case 'blocked':
-        return items.filter((item) => (item.pipeline?.blockers.length ?? 0) > 0);
+        return items.filter(
+          (item) => (item.pipeline?.blockers.length ?? 0) > 0,
+        );
       case 'stale':
         return items.filter((item) => item.pipeline?.isStale);
       case 'ready':

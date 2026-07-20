@@ -84,6 +84,7 @@ type FollowUpNotificationSource = {
   assignee_user_id: string;
   due_at: Date;
   completed_at: Date | null;
+  cancelled_at: Date | null;
   note: string;
   seller_name: string | null;
   vehicle_brand: string | null;
@@ -300,6 +301,7 @@ export class NotificationsService implements OnApplicationBootstrap {
     const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const followUps = await this.buildFollowUpNotificationSourceQuery()
       .where('fu.completed_at', 'is', null)
+      .where('fu.cancelled_at', 'is', null)
       .where('fu.due_at', '<=', horizon)
       .execute();
 
@@ -320,7 +322,7 @@ export class NotificationsService implements OnApplicationBootstrap {
       .where('fu.id', '=', followUpId)
       .executeTakeFirst();
 
-    if (!followUp || followUp.completed_at) {
+    if (!followUp || followUp.completed_at || followUp.cancelled_at) {
       return { created: 0 };
     }
 
@@ -671,6 +673,7 @@ export class NotificationsService implements OnApplicationBootstrap {
         'fu.assignee_user_id',
         'fu.due_at',
         'fu.completed_at',
+        'fu.cancelled_at',
         'fu.note',
         'sl.seller_name',
         'sl.vehicle_brand',
