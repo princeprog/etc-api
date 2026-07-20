@@ -1,8 +1,8 @@
-import type { ExpenseNotificationType } from '../../database/schema';
+import type { NotificationType } from '../../database/schema';
 
 export interface NotificationResponse {
   id: string;
-  type: ExpenseNotificationType;
+  type: NotificationType;
   title: string;
   message: string;
   entityType: string;

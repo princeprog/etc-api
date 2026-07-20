@@ -15,6 +15,7 @@ import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CompleteFollowUpDto } from './dto/complete-follow-up.dto';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { ListFollowUpsQueryDto } from './dto/list-follow-ups-query.dto';
@@ -34,6 +35,7 @@ export class FollowUpsService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(user: CurrentUser, dto: CreateFollowUpDto) {
@@ -105,13 +107,18 @@ export class FollowUpsService {
 
     const followUp = await this.getRecordOrThrow(inserted.id);
     await this.writeLeadFollowUpActivity(user, followUp, 'scheduled');
+    await this.notificationsService.refreshForFollowUp(inserted.id);
 
     return { followUp: await this.getFollowUpOrThrow(inserted.id) };
   }
 
   async findAll(query: ListFollowUpsQueryDto = {}) {
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const tomorrowStart = new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -339,6 +346,7 @@ export class FollowUpsService {
       .set(updateValues)
       .where('id', '=', id)
       .execute();
+    await this.notificationsService.refreshForFollowUp(id);
 
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
@@ -380,6 +388,7 @@ export class FollowUpsService {
     });
 
     await this.writeLeadFollowUpActivity(user, followUp, 'completed');
+    await this.notificationsService.resolveForFollowUp(id);
 
     return { followUp: await this.getFollowUpOrThrow(id) };
   }
@@ -398,8 +407,12 @@ export class FollowUpsService {
     followUp: Awaited<ReturnType<FollowUpsService['getRecordOrThrow']>>,
     action: 'scheduled' | 'completed',
   ) {
-    const entityType = followUp.lead_type === 'buyer' ? 'buyer_lead' : 'seller_lead';
-    const entityId = followUp.lead_type === 'buyer' ? followUp.buyer_lead_id : followUp.seller_lead_id;
+    const entityType =
+      followUp.lead_type === 'buyer' ? 'buyer_lead' : 'seller_lead';
+    const entityId =
+      followUp.lead_type === 'buyer'
+        ? followUp.buyer_lead_id
+        : followUp.seller_lead_id;
 
     if (!entityId) {
       return;
@@ -410,7 +423,10 @@ export class FollowUpsService {
       entityType,
       entityId,
       actionType: `${entityType}.follow_up_${action}`,
-      summary: action === 'scheduled' ? 'Follow-up scheduled for lead' : 'Lead follow-up completed',
+      summary:
+        action === 'scheduled'
+          ? 'Follow-up scheduled for lead'
+          : 'Lead follow-up completed',
       metadata: {
         followUpId: followUp.id,
         dueAt: followUp.due_at.toISOString(),

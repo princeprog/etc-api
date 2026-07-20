@@ -11,7 +11,12 @@ import { sql, type Kysely } from 'kysely';
 import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
-import type { ExpenseNotificationType } from '../../database/schema';
+import type {
+  ExpenseNotificationType,
+  FollowUpNotificationType,
+  LeadType,
+  NotificationType,
+} from '../../database/schema';
 import {
   addDaysToDateKey,
   daysBetweenDateKeys,
@@ -23,6 +28,7 @@ import {
   resolveExpenseDisplayStatus,
 } from '../expenses/expenses.helpers';
 import type { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
+import { resolveFollowUpNotificationType } from './notifications.helpers';
 import type { NotificationResponse } from './notifications.types';
 
 const UNIQUE_VIOLATION_CODE = '23505';
@@ -50,6 +56,20 @@ type ExpenseNotificationSource = {
   assigned_staff_id: string | null;
 };
 
+type FollowUpNotificationSource = {
+  id: string;
+  lead_type: LeadType;
+  assignee_user_id: string;
+  due_at: Date;
+  completed_at: Date | null;
+  note: string;
+  seller_name: string | null;
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  buyer_name: string | null;
+  contact_number: string | null;
+};
+
 @Injectable()
 export class NotificationsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(NotificationsService.name);
@@ -57,17 +77,20 @@ export class NotificationsService implements OnApplicationBootstrap {
   constructor(@Inject(DATABASE) private readonly db: Kysely<DB>) {}
 
   async onApplicationBootstrap() {
-    await this.generateExpenseNotifications().catch((error: unknown) => {
-      this.logger.error(
-        'Failed to generate expense notifications on bootstrap',
-        error,
-      );
+    await Promise.all([
+      this.generateExpenseNotifications(),
+      this.generateFollowUpNotifications(),
+    ]).catch((error: unknown) => {
+      this.logger.error('Failed to generate notifications on bootstrap', error);
     });
   }
 
   @Cron('20 0 * * *', { timeZone: getAppTimeZone() })
   async runDailyExpenseNotificationGeneration() {
-    await this.generateExpenseNotifications();
+    await Promise.all([
+      this.generateExpenseNotifications(),
+      this.generateFollowUpNotifications(),
+    ]);
   }
 
   async list(user: CurrentUser, query: ListNotificationsQueryDto) {
@@ -186,6 +209,24 @@ export class NotificationsService implements OnApplicationBootstrap {
     return this.generateExpenseNotificationsForExpense(expenseId);
   }
 
+  async resolveForFollowUp(followUpId: string) {
+    await this.db
+      .updateTable('ops.notifications')
+      .set({
+        resolved_at: new Date(),
+        updated_at: new Date(),
+      })
+      .where('entity_type', '=', 'follow_up')
+      .where('entity_id', '=', followUpId)
+      .where('resolved_at', 'is', null)
+      .execute();
+  }
+
+  async refreshForFollowUp(followUpId: string) {
+    await this.resolveForFollowUp(followUpId);
+    return this.generateFollowUpNotificationsForFollowUp(followUpId);
+  }
+
   async generateExpenseNotifications() {
     const todayKey = getTodayDateKey();
     const lookaheadKey = addDaysToDateKey(todayKey, 7);
@@ -231,6 +272,44 @@ export class NotificationsService implements OnApplicationBootstrap {
 
     return {
       created: await this.generateForExpense(expense, getTodayDateKey()),
+    };
+  }
+
+  async generateFollowUpNotifications() {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const followUps = await this.buildFollowUpNotificationSourceQuery()
+      .where('fu.completed_at', 'is', null)
+      .where('fu.due_at', '<=', horizon)
+      .execute();
+
+    let created = 0;
+    for (const followUp of followUps) {
+      created += await this.generateForFollowUp(
+        this.normalizeFollowUpNotificationSource(followUp),
+        now,
+        getTodayDateKey(),
+      );
+    }
+
+    return { created };
+  }
+
+  async generateFollowUpNotificationsForFollowUp(followUpId: string) {
+    const followUp = await this.buildFollowUpNotificationSourceQuery()
+      .where('fu.id', '=', followUpId)
+      .executeTakeFirst();
+
+    if (!followUp || followUp.completed_at) {
+      return { created: 0 };
+    }
+
+    return {
+      created: await this.generateForFollowUp(
+        this.normalizeFollowUpNotificationSource(followUp),
+        new Date(),
+        getTodayDateKey(),
+      ),
     };
   }
 
@@ -292,6 +371,34 @@ export class NotificationsService implements OnApplicationBootstrap {
     return created;
   }
 
+  private async generateForFollowUp(
+    followUp: FollowUpNotificationSource,
+    now: Date,
+    todayKey: string,
+  ) {
+    const trigger = this.resolveFollowUpTrigger(followUp, now, todayKey);
+
+    if (!trigger) {
+      return 0;
+    }
+
+    const recipients = await this.resolveRecipients(followUp.assignee_user_id);
+    let created = 0;
+
+    for (const recipientId of recipients) {
+      const didCreate = await this.upsertFollowUpNotification(
+        recipientId,
+        followUp,
+        trigger,
+      );
+      if (didCreate) {
+        created += 1;
+      }
+    }
+
+    return created;
+  }
+
   private resolveExpenseTrigger(
     expense: ExpenseNotificationSource,
     todayKey: string,
@@ -312,6 +419,14 @@ export class NotificationsService implements OnApplicationBootstrap {
     }
 
     return null;
+  }
+
+  private resolveFollowUpTrigger(
+    followUp: FollowUpNotificationSource,
+    now: Date,
+    todayKey: string,
+  ): FollowUpNotificationType | null {
+    return resolveFollowUpNotificationType(followUp.due_at, now, todayKey);
   }
 
   private async resolveRecipients(assignedStaffId: string | null) {
@@ -387,6 +502,61 @@ export class NotificationsService implements OnApplicationBootstrap {
     }
   }
 
+  private async upsertFollowUpNotification(
+    recipientId: string,
+    followUp: FollowUpNotificationSource,
+    type: FollowUpNotificationType,
+  ) {
+    const dueDateKey = formatDateKey(followUp.due_at);
+    const deduplicationKey = `${type}:follow_up:${followUp.id}:${dueDateKey}:${recipientId}`;
+    const content = this.buildFollowUpNotificationContent(followUp, type);
+    const existing = await this.db
+      .selectFrom('ops.notifications')
+      .select(['id', 'resolved_at'])
+      .where('deduplication_key', '=', deduplicationKey)
+      .executeTakeFirst();
+
+    if (existing) {
+      if (!existing.resolved_at) {
+        await this.db
+          .updateTable('ops.notifications')
+          .set({
+            title: content.title,
+            message: content.message,
+            updated_at: new Date(),
+          })
+          .where('id', '=', existing.id)
+          .execute();
+      }
+
+      return false;
+    }
+
+    try {
+      await this.db
+        .insertInto('ops.notifications')
+        .values({
+          recipient_user_id: recipientId,
+          type,
+          title: content.title,
+          message: content.message,
+          entity_type: 'follow_up',
+          entity_id: followUp.id,
+          due_date_snapshot: followUp.due_at,
+          deduplication_key: deduplicationKey,
+        })
+        .execute();
+
+      return true;
+    } catch (error) {
+      if (this.isDatabaseError(error) && error.code === UNIQUE_VIOLATION_CODE) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
   private buildExpenseNotificationContent(
     expense: ExpenseNotificationSource,
     type: ExpenseNotificationType,
@@ -420,6 +590,87 @@ export class NotificationsService implements OnApplicationBootstrap {
     }
   }
 
+  private buildFollowUpNotificationContent(
+    followUp: FollowUpNotificationSource,
+    type: FollowUpNotificationType,
+  ) {
+    const leadLabel = this.getFollowUpLeadLabel(followUp);
+    const note = truncateText(followUp.note, 90);
+    const dueDate = formatDateKey(followUp.due_at);
+    const dueTime = followUp.due_at.toLocaleTimeString('en-PH', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: getAppTimeZone(),
+    });
+
+    switch (type) {
+      case 'follow_up_due_soon':
+        return {
+          title: 'Follow-up due soon',
+          message: `${leadLabel} has a follow-up due on ${dueDate} at ${dueTime}: ${note}.`,
+        };
+      case 'follow_up_due_today':
+        return {
+          title: 'Follow-up due today',
+          message: `${leadLabel} has a follow-up due today at ${dueTime}: ${note}.`,
+        };
+      case 'follow_up_overdue':
+        return {
+          title: 'Overdue follow-up',
+          message: `${leadLabel} had a follow-up due on ${dueDate} at ${dueTime}: ${note}.`,
+        };
+    }
+  }
+
+  private getFollowUpLeadLabel(followUp: FollowUpNotificationSource) {
+    if (followUp.lead_type === 'seller') {
+      const vehicle = [followUp.vehicle_brand, followUp.vehicle_model]
+        .filter(Boolean)
+        .join(' ');
+      return (
+        [followUp.seller_name, vehicle].filter(Boolean).join(' - ') ||
+        'Seller lead'
+      );
+    }
+
+    return (
+      [followUp.buyer_name, followUp.contact_number]
+        .filter(Boolean)
+        .join(' - ') || 'Buyer lead'
+    );
+  }
+
+  private buildFollowUpNotificationSourceQuery() {
+    return this.db
+      .selectFrom('crm.follow_ups as fu')
+      .leftJoin('crm.seller_leads as sl', 'sl.id', 'fu.seller_lead_id')
+      .leftJoin('crm.buyer_leads as bl', 'bl.id', 'fu.buyer_lead_id')
+      .select([
+        'fu.id',
+        'fu.lead_type',
+        'fu.assignee_user_id',
+        'fu.due_at',
+        'fu.completed_at',
+        'fu.note',
+        'sl.seller_name',
+        'sl.vehicle_brand',
+        'sl.vehicle_model',
+        'bl.buyer_name',
+        'bl.contact_number',
+      ]);
+  }
+
+  private normalizeFollowUpNotificationSource(
+    followUp: Omit<FollowUpNotificationSource, 'lead_type'> & {
+      lead_type: string;
+    },
+  ): FollowUpNotificationSource {
+    return {
+      ...followUp,
+      lead_type: followUp.lead_type === 'buyer' ? 'buyer' : 'seller',
+    };
+  }
+
   private applyNotificationFilters<
     TQuery extends { where: (...args: any[]) => TQuery },
   >(query: TQuery, unreadOnly: boolean, includeResolved: boolean) {
@@ -450,7 +701,11 @@ function mapNotification(row: NotificationRow): NotificationResponse {
     entityType: row.entity_type,
     entityId: row.entity_id,
     actionUrl:
-      row.entity_type === 'expense' ? `/bills-expenses/${row.entity_id}` : null,
+      row.entity_type === 'expense'
+        ? `/bills-expenses/${row.entity_id}`
+        : row.entity_type === 'follow_up'
+          ? '/follow-ups'
+          : null,
     dueDateSnapshot: row.due_date_snapshot,
     isRead: row.read_at !== null,
     readAt: row.read_at,
@@ -460,14 +715,23 @@ function mapNotification(row: NotificationRow): NotificationResponse {
   };
 }
 
-function parseNotificationType(value: string): ExpenseNotificationType {
+function parseNotificationType(value: string): NotificationType {
   if (
     value === 'expense_due_soon' ||
     value === 'expense_due_today' ||
-    value === 'expense_overdue'
+    value === 'expense_overdue' ||
+    value === 'follow_up_due_soon' ||
+    value === 'follow_up_due_today' ||
+    value === 'follow_up_overdue'
   ) {
     return value;
   }
 
   throw new Error(`Unsupported notification type: ${value}`);
+}
+
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength
+    ? `${value.slice(0, maxLength - 1)}...`
+    : value;
 }
