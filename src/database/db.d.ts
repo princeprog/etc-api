@@ -83,6 +83,38 @@ export interface AuthCustomOauthProviders {
   userinfo_url: string | null;
 }
 
+export interface AuthenticationPermissions {
+  action: string;
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  key: string;
+  label: string;
+  module: string;
+  sort_order: number;
+  supports_assigned_scope: Generated<boolean>;
+}
+
+export interface AuthenticationRolePermissions {
+  created_at: Generated<Timestamp>;
+  permission_key: string;
+  role_id: string;
+  scope: string;
+}
+
+export interface AuthenticationRoles {
+  archived_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  description: string | null;
+  id: Generated<string>;
+  is_mutable: Generated<boolean>;
+  is_system: Generated<boolean>;
+  name: string;
+  revision: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+}
+
 export interface AuthenticationSessions {
   created_at: Generated<Timestamp>;
   current_access_token_jti: string;
@@ -104,6 +136,7 @@ export interface AuthenticationUsers {
   must_change_password: Generated<boolean>;
   password_hash: string;
   role: string;
+  role_id: string;
   updated_at: Generated<Timestamp>;
 }
 
@@ -435,6 +468,48 @@ export interface CrmFollowUps {
   updated_at: Generated<Timestamp>;
 }
 
+export interface CrmInspectionTemplateItems {
+  finding_key: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_required: Generated<boolean>;
+  label: string;
+  sort_order: number;
+  stable_key: string;
+  template_section_id: string;
+}
+
+export interface CrmInspectionTemplates {
+  archived_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  description: string | null;
+  id: Generated<string>;
+  is_default: Generated<boolean>;
+  name: string;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+}
+
+export interface CrmInspectionTemplateSections {
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  label: string;
+  sort_order: number;
+  template_version_id: string;
+}
+
+export interface CrmInspectionTemplateVersions {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  published_at: Timestamp | null;
+  published_by_user_id: string | null;
+  status: string;
+  template_id: string;
+  updated_at: Generated<Timestamp>;
+  version_number: number;
+}
+
 export interface CrmLeadActivities {
   activity_type: string;
   buyer_lead_id: string | null;
@@ -451,6 +526,24 @@ export interface CrmLeadVehicleLinks {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   vehicle_id: string;
+}
+
+export interface CrmSellerLeadInspections {
+  answers: Json;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  estimated_repair_cost: Numeric | null;
+  id: Generated<string>;
+  inspector_notes: string | null;
+  inspector_user_id: string | null;
+  major_issues: string | null;
+  overall_condition: string;
+  recommended_repairs: string | null;
+  seller_lead_id: string;
+  status: string;
+  template_snapshot: Json;
+  template_version_id: string | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface CrmSellerLeads {
@@ -913,12 +1006,20 @@ export interface DB {
   "auth.users": AuthUsers;
   "auth.webauthn_challenges": AuthWebauthnChallenges;
   "auth.webauthn_credentials": AuthWebauthnCredentials;
+  "authentication.permissions": AuthenticationPermissions;
+  "authentication.role_permissions": AuthenticationRolePermissions;
+  "authentication.roles": AuthenticationRoles;
   "authentication.sessions": AuthenticationSessions;
   "authentication.users": AuthenticationUsers;
   "crm.buyer_leads": CrmBuyerLeads;
   "crm.follow_ups": CrmFollowUps;
+  "crm.inspection_template_items": CrmInspectionTemplateItems;
+  "crm.inspection_template_sections": CrmInspectionTemplateSections;
+  "crm.inspection_template_versions": CrmInspectionTemplateVersions;
+  "crm.inspection_templates": CrmInspectionTemplates;
   "crm.lead_activities": CrmLeadActivities;
   "crm.lead_vehicle_links": CrmLeadVehicleLinks;
+  "crm.seller_lead_inspections": CrmSellerLeadInspections;
   "crm.seller_leads": CrmSellerLeads;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;

@@ -17,6 +17,8 @@ import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.
 import { LeadPipelineModule } from './modules/lead-pipeline/lead-pipeline.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { InspectionChecklistsModule } from './modules/inspection-checklists/inspection-checklists.module';
+import { RolesModule } from './modules/roles/roles.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     LeadPipelineModule,
     ExpensesModule,
     NotificationsModule,
+    InspectionChecklistsModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

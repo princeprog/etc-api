@@ -24,6 +24,12 @@ async function bootstrapAdmin() {
     const email = requireEnv('BOOTSTRAP_ADMIN_EMAIL').trim().toLowerCase();
     const password = requireEnv('BOOTSTRAP_ADMIN_PASSWORD');
     const fullName = requireEnv('BOOTSTRAP_ADMIN_FULL_NAME').trim();
+    const administratorRole = await db
+      .selectFrom('authentication.roles')
+      .select(['id'])
+      .where('name', '=', 'Administrator')
+      .where('archived_at', 'is', null)
+      .executeTakeFirstOrThrow();
 
     const insertedUser = await db
       .insertInto('authentication.users')
@@ -32,6 +38,7 @@ async function bootstrapAdmin() {
         password_hash: await hashPassword(password),
         full_name: fullName,
         role: 'admin',
+        role_id: administratorRole.id,
       })
       .returning(['id', 'email', 'full_name'])
       .executeTakeFirstOrThrow();

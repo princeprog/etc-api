@@ -1,6 +1,7 @@
 import type { Generated, Insertable, Selectable, Updateable } from 'kysely';
 
 export type RoleName = 'admin' | 'staff';
+export type PermissionScope = 'assigned' | 'all';
 export type VehicleStatus =
   | 'Incoming'
   | 'Reconditioning'
@@ -94,10 +95,43 @@ export interface UsersTable {
   password_hash: string;
   full_name: string;
   role: RoleName;
+  role_id: string;
   must_change_password: Generated<boolean>;
   active: Generated<boolean>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+export interface RolesTable {
+  id: Generated<string>;
+  name: string;
+  description: string | null;
+  is_system: Generated<boolean>;
+  is_mutable: Generated<boolean>;
+  archived_at: Date | null;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  revision: Generated<number>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface PermissionsTable {
+  key: string;
+  module: string;
+  action: string;
+  label: string;
+  description: string | null;
+  supports_assigned_scope: Generated<boolean>;
+  sort_order: number;
+  created_at: Generated<Date>;
+}
+
+export interface RolePermissionsTable {
+  role_id: string;
+  permission_key: string;
+  scope: PermissionScope;
+  created_at: Generated<Date>;
 }
 
 export interface SessionsTable {
@@ -369,6 +403,9 @@ export interface NotificationsTable {
 }
 
 export interface DB {
+  'authentication.permissions': PermissionsTable;
+  'authentication.role_permissions': RolePermissionsTable;
+  'authentication.roles': RolesTable;
   'authentication.users': UsersTable;
   'authentication.sessions': SessionsTable;
   'inventory.vehicles': VehiclesTable;
@@ -392,6 +429,11 @@ export interface DB {
 export type User = Selectable<UsersTable>;
 export type NewUser = Insertable<UsersTable>;
 export type UserUpdate = Updateable<UsersTable>;
+export type Role = Selectable<RolesTable>;
+export type NewRole = Insertable<RolesTable>;
+export type RoleUpdate = Updateable<RolesTable>;
+export type Permission = Selectable<PermissionsTable>;
+export type RolePermission = Selectable<RolePermissionsTable>;
 
 export type Session = Selectable<SessionsTable>;
 export type NewSession = Insertable<SessionsTable>;

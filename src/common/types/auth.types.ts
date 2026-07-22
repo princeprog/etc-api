@@ -1,6 +1,7 @@
 import type { Request } from 'express';
 
 import type { RoleName, User } from '../../database/schema';
+import type { PermissionScope } from '../auth/permissions';
 
 export interface AuthTokenPayload {
   type: 'access';
@@ -26,6 +27,10 @@ export interface CurrentUser {
   email: User['email'];
   fullName: User['full_name'];
   role: RoleName;
+  roleId: string;
+  roleName: string;
+  isAdministrator: boolean;
+  permissions: Record<string, PermissionScope>;
   mustChangePassword: User['must_change_password'];
   active: User['active'];
 }

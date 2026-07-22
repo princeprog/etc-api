@@ -15,6 +15,10 @@ import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type { RoleName, User } from '../../database/schema';
 import {
+  ADMINISTRATOR_ROLE_NAME,
+  type PermissionScope,
+} from '../../common/auth/permissions';
+import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
 } from '../../common/constants/auth.constants';
@@ -35,12 +39,14 @@ import {
   hashPassword,
   hashToken,
   parseRole,
+  parseRoleAlias,
   verifyPassword,
 } from '../../common/utils/auth.utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { RolesService } from '../roles/roles.service';
 
 const DEFAULT_STAFF_PASSWORD = '123456';
 const MIN_PASSWORD_LENGTH = 6;
@@ -52,6 +58,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly rolesService: RolesService,
   ) {}
 
   async login(
@@ -90,7 +97,7 @@ export class AuthService {
     const normalizedUser = this.normalizeUser(user);
 
     await this.issueSessionTokens(normalizedUser, response);
-    return { user: this.toCurrentUser(normalizedUser) };
+    return { user: await this.toCurrentUser(normalizedUser) };
   }
 
   me(user: CurrentUser): { user: CurrentUser } {
@@ -177,6 +184,7 @@ export class AuthService {
         'authentication.users.email as userEmail',
         'authentication.users.full_name as userFullName',
         'authentication.users.role as userRole',
+        'authentication.users.role_id as userRoleId',
         'authentication.users.password_hash as userPasswordHash',
         'authentication.users.active as userActive',
         'authentication.users.must_change_password as userMustChangePassword',
@@ -206,6 +214,7 @@ export class AuthService {
       email: session.userEmail,
       full_name: session.userFullName,
       role: parseRole(session.userRole),
+      role_id: session.userRoleId,
       password_hash: session.userPasswordHash,
       must_change_password: session.userMustChangePassword,
       active: session.userActive,
@@ -214,7 +223,7 @@ export class AuthService {
     };
 
     await this.rotateSessionTokens(user, payload.sessionId, response);
-    return { user: this.toCurrentUser(user) };
+    return { user: await this.toCurrentUser(user) };
   }
 
   async logout(
@@ -248,7 +257,8 @@ export class AuthService {
     currentUser: CurrentUser,
   ): Promise<{ user: CurrentUser }> {
     const email = createUserDto.email?.trim().toLowerCase();
-    const role = this.parseCreateUserRole(createUserDto.role);
+    const roleRecord = await this.resolveCreateUserRole(createUserDto);
+    const role = this.toLegacyRole(roleRecord.name);
     const password = this.resolveCreateUserPassword(
       createUserDto.password,
       role,
@@ -281,6 +291,7 @@ export class AuthService {
         password_hash: await hashPassword(password),
         full_name: fullName,
         role,
+        role_id: roleRecord.id,
         must_change_password: role === 'staff',
       })
       .returningAll()
@@ -296,11 +307,13 @@ export class AuthService {
         email: insertedUser.email,
         fullName: insertedUser.full_name,
         role: insertedUser.role,
+        roleId: insertedUser.role_id,
+        roleName: roleRecord.name,
         mustChangePassword: insertedUser.must_change_password,
       },
     });
 
-    return { user: this.toCurrentUser(this.normalizeUser(insertedUser)) };
+    return { user: await this.toCurrentUser(this.normalizeUser(insertedUser)) };
   }
 
   async listUsers(query: ListUsersQueryDto): Promise<{
@@ -320,8 +333,11 @@ export class AuthService {
     const total = await this.countFilteredStaffUsers(query);
     const summary = await this.getUsersSummary();
     const users = await this.getFilteredStaffUsers(query, pagination);
-    const response = buildPaginatedResponse(
+    const currentUsers = await Promise.all(
       users.map((user) => this.toCurrentUser(this.normalizeUser(user))),
+    );
+    const response = buildPaginatedResponse(
+      currentUsers,
       pagination,
       total,
     );
@@ -339,9 +355,7 @@ export class AuthService {
   private buildFilteredStaffUsersQuery(query: ListUsersQueryDto) {
     const search = query.search?.trim();
     const status = query.status?.trim();
-    let usersQuery = this.db
-      .selectFrom('authentication.users')
-      .where('role', '=', 'staff');
+    let usersQuery = this.db.selectFrom('authentication.users');
 
     if (search) {
       usersQuery = usersQuery.where((expressionBuilder) =>
@@ -403,7 +417,7 @@ export class AuthService {
       .select(['role', 'active'])
       .execute();
 
-    const staffUsers = rows.filter((user) => user.role === 'staff');
+    const staffUsers = rows.filter((user) => user.role !== 'admin');
 
     return {
       adminCount: rows.filter((user) => user.role === 'admin').length,
@@ -434,10 +448,6 @@ export class AuthService {
 
     if (!existingUser) {
       throw new BadRequestException('User not found');
-    }
-
-    if (existingUser.role !== 'staff') {
-      throw new BadRequestException('Only staff accounts can be updated here');
     }
 
     const updatedUser = await this.db
@@ -472,7 +482,63 @@ export class AuthService {
         to: updatedUser.active,
       },
     });
-    return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
+    return { user: await this.toCurrentUser(this.normalizeUser(updatedUser)) };
+  }
+
+  async updateUserRole(
+    userId: string,
+    updateUserRoleDto: { roleId: string },
+    currentUser: CurrentUser,
+  ): Promise<{ user: CurrentUser }> {
+    if (!updateUserRoleDto.roleId) {
+      throw new BadRequestException('roleId is required');
+    }
+
+    if (userId === currentUser.id) {
+      throw new BadRequestException('You cannot change your own role');
+    }
+
+    const existingUser = await this.db
+      .selectFrom('authentication.users')
+      .selectAll()
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!existingUser) {
+      throw new BadRequestException('User not found');
+    }
+
+    const role = await this.rolesService.getActiveRoleOrThrow(
+      updateUserRoleDto.roleId,
+    );
+
+    const updatedUser = await this.db
+      .updateTable('authentication.users')
+      .set({
+        role_id: role.id,
+        role: this.toLegacyRole(role.name),
+        updated_at: new Date(),
+      })
+      .where('id', '=', userId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    await this.activityHistoryService.write({
+      actor: currentUser,
+      entityType: 'user',
+      entityId: updatedUser.id,
+      actionType: 'user.role_changed',
+      summary: 'User role changed',
+      metadata: {
+        email: updatedUser.email,
+        fullName: updatedUser.full_name,
+        fromRoleId: existingUser.role_id,
+        toRoleId: role.id,
+        toRoleName: role.name,
+      },
+    });
+
+    return { user: await this.toCurrentUser(this.normalizeUser(updatedUser)) };
   }
 
   async changePassword(
@@ -529,7 +595,7 @@ export class AuthService {
           user.must_change_password && !updatedUser.must_change_password,
       },
     });
-    return { user: this.toCurrentUser(this.normalizeUser(updatedUser)) };
+    return { user: await this.toCurrentUser(this.normalizeUser(updatedUser)) };
   }
 
   private async issueSessionTokens(
@@ -685,12 +751,33 @@ export class AuthService {
     };
   }
 
-  private toCurrentUser(user: User): CurrentUser {
+  private async toCurrentUser(user: User): Promise<CurrentUser> {
+    const role = await this.db
+      .selectFrom('authentication.roles')
+      .select(['name'])
+      .where('id', '=', user.role_id)
+      .executeTakeFirst();
+    const permissions = await this.db
+      .selectFrom('authentication.role_permissions')
+      .select(['permission_key', 'scope'])
+      .where('role_id', '=', user.role_id)
+      .execute();
+    const roleName = role?.name ?? (user.role === 'admin' ? 'Administrator' : 'Staff');
+
     return {
       id: user.id,
       email: user.email,
       fullName: user.full_name,
-      role: user.role,
+      role: parseRoleAlias(roleName, user.role),
+      roleId: user.role_id,
+      roleName,
+      isAdministrator: roleName === ADMINISTRATOR_ROLE_NAME,
+      permissions: Object.fromEntries(
+        permissions.map((permission) => [
+          permission.permission_key,
+          permission.scope as PermissionScope,
+        ]),
+      ),
       mustChangePassword: user.must_change_password,
       active: user.active,
     };
@@ -702,6 +789,7 @@ export class AuthService {
     password_hash: string;
     full_name: string;
     role: string;
+    role_id: string;
     must_change_password: boolean;
     active: boolean;
     created_at: Date;
@@ -713,16 +801,29 @@ export class AuthService {
     };
   }
 
-  private parseCreateUserRole(role: RoleName | undefined): RoleName {
-    if (!role) {
-      return 'staff';
+  private async resolveCreateUserRole(createUserDto: CreateUserDto) {
+    if (createUserDto.roleId) {
+      return this.rolesService.getActiveRoleOrThrow(createUserDto.roleId);
     }
 
-    try {
-      return parseRole(role);
-    } catch {
-      throw new BadRequestException('role must be either admin or staff');
+    const roleName =
+      createUserDto.role === 'admin' ? ADMINISTRATOR_ROLE_NAME : 'Staff';
+    const role = await this.db
+      .selectFrom('authentication.roles')
+      .selectAll()
+      .where('name', '=', roleName)
+      .where('archived_at', 'is', null)
+      .executeTakeFirst();
+
+    if (!role) {
+      throw new BadRequestException(`${roleName} role is not configured`);
     }
+
+    return role;
+  }
+
+  private toLegacyRole(roleName: string): RoleName {
+    return roleName === ADMINISTRATOR_ROLE_NAME ? 'admin' : 'staff';
   }
 
   private resolveCreateUserPassword(

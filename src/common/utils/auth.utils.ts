@@ -53,6 +53,18 @@ export function parseRole(value: string): RoleName {
   throw new Error(`Unsupported role value: ${value}`);
 }
 
+export function parseRoleAlias(roleName: string, fallback?: string): RoleName {
+  if (roleName === 'Administrator') {
+    return 'admin';
+  }
+
+  if (fallback === 'admin') {
+    return 'admin';
+  }
+
+  return 'staff';
+}
+
 export function durationToMs(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/i.exec(value.trim());
 

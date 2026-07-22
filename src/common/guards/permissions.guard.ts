@@ -7,21 +7,20 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import type { RoleName } from '../../database/schema';
-import { ROLES_KEY } from '../decorators/roles.decorator';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import type { AuthenticatedRequest } from '../types/auth.types';
 
 @Injectable()
-export class RolesGuard implements CanActivate {
+export class PermissionsGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const roles = this.reflector.getAllAndOverride<RoleName[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
-    if (!roles || roles.length === 0) {
+    if (!requiredPermissions || requiredPermissions.length === 0) {
       return true;
     }
 
@@ -32,11 +31,11 @@ export class RolesGuard implements CanActivate {
       throw new UnauthorizedException('Authentication required');
     }
 
-    const hasRole = roles.some((role) =>
-      role === 'admin' ? currentUser.isAdministrator : currentUser.role === role,
+    const hasAccess = requiredPermissions.every(
+      (permission) => currentUser.permissions?.[permission],
     );
 
-    if (!hasRole) {
+    if (!hasAccess) {
       throw new ForbiddenException(
         'You do not have permission to perform this action',
       );

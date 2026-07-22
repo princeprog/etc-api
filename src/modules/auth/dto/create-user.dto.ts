@@ -5,4 +5,5 @@ export class CreateUserDto {
   password?: string;
   fullName?: string;
   role?: RoleName;
+  roleId?: string;
 }

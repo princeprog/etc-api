@@ -9,9 +9,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { Roles } from '../../common/decorators/roles.decorator';
+import { PERMISSIONS } from '../../common/auth/permissions';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CreateVehicleBrandDto } from './dto/create-vehicle-brand.dto';
 import { CreateVehicleModelDto } from './dto/create-vehicle-model.dto';
 import { CreateVehicleVariantDto } from './dto/create-vehicle-variant.dto';
@@ -36,8 +37,8 @@ export class VehicleCatalogController {
     return this.vehicleCatalogService.createBrand(dto);
   }
 
-  @UseGuards(AccessTokenGuard, RolesGuard)
-  @Roles('admin')
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.vehicleCatalogManage)
   @Patch('brands/:id')
   updateBrand(
     @Param('id') id: string,
@@ -56,8 +57,8 @@ export class VehicleCatalogController {
     return this.vehicleCatalogService.createModel(dto);
   }
 
-  @UseGuards(AccessTokenGuard, RolesGuard)
-  @Roles('admin')
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.vehicleCatalogManage)
   @Patch('models/:id')
   updateModel(
     @Param('id') id: string,
@@ -76,8 +77,8 @@ export class VehicleCatalogController {
     return this.vehicleCatalogService.createVariant(dto);
   }
 
-  @UseGuards(AccessTokenGuard, RolesGuard)
-  @Roles('admin')
+  @UseGuards(AccessTokenGuard, PermissionsGuard)
+  @RequirePermissions(PERMISSIONS.vehicleCatalogManage)
   @Patch('variants/:id')
   updateVariant(
     @Param('id') id: string,

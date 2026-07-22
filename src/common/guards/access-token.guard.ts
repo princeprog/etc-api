@@ -10,13 +10,17 @@ import type { Kysely } from 'kysely';
 
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
+import {
+  ADMINISTRATOR_ROLE_NAME,
+  type PermissionScope,
+} from '../auth/permissions';
 import { ACCESS_TOKEN_COOKIE } from '../constants/auth.constants';
 import type {
   AuthenticatedRequest,
   AuthTokenPayload,
   CurrentUser,
 } from '../types/auth.types';
-import { parseRole } from '../utils/auth.utils';
+import { parseRoleAlias } from '../utils/auth.utils';
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
@@ -57,6 +61,11 @@ export class AccessTokenGuard implements CanActivate {
         'authentication.users.id',
         'authentication.sessions.user_id',
       )
+      .innerJoin(
+        'authentication.roles',
+        'authentication.roles.id',
+        'authentication.users.role_id',
+      )
       .select([
         'authentication.sessions.id as sessionId',
         'authentication.sessions.current_access_token_jti as currentAccessTokenJti',
@@ -66,13 +75,16 @@ export class AccessTokenGuard implements CanActivate {
         'authentication.users.email as userEmail',
         'authentication.users.full_name as userFullName',
         'authentication.users.role as userRole',
+        'authentication.users.role_id as userRoleId',
         'authentication.users.must_change_password as userMustChangePassword',
         'authentication.users.active as userActive',
+        'authentication.roles.name as roleName',
+        'authentication.roles.archived_at as roleArchivedAt',
       ])
       .where('authentication.sessions.id', '=', payload.sessionId)
       .executeTakeFirst();
 
-    if (!session || !session.userActive) {
+    if (!session || !session.userActive || session.roleArchivedAt) {
       throw new UnauthorizedException('Session is no longer valid');
     }
 
@@ -87,11 +99,26 @@ export class AccessTokenGuard implements CanActivate {
       throw new UnauthorizedException('Access token has been revoked');
     }
 
+    const permissions = await this.db
+      .selectFrom('authentication.role_permissions')
+      .select(['permission_key', 'scope'])
+      .where('role_id', '=', session.userRoleId)
+      .execute();
+
     request.authUser = {
       id: session.userId,
       email: session.userEmail,
       fullName: session.userFullName,
-      role: parseRole(session.userRole),
+      role: parseRoleAlias(session.roleName, session.userRole),
+      roleId: session.userRoleId,
+      roleName: session.roleName,
+      isAdministrator: session.roleName === ADMINISTRATOR_ROLE_NAME,
+      permissions: Object.fromEntries(
+        permissions.map((permission) => [
+          permission.permission_key,
+          permission.scope as PermissionScope,
+        ]),
+      ),
       mustChangePassword: session.userMustChangePassword,
       active: session.userActive,
     } satisfies CurrentUser;

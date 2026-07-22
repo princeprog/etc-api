@@ -23,6 +23,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -115,5 +116,16 @@ export class AuthController {
     @CurrentUser() user: CurrentUserType,
   ) {
     return this.authService.updateUserStatus(id, updateUserStatusDto, user);
+  }
+
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles('admin')
+  @Patch('users/:id/role')
+  updateUserRole(
+    @Param('id') id: string,
+    @Body() updateUserRoleDto: UpdateUserRoleDto,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.authService.updateUserRole(id, updateUserRoleDto, user);
   }
 }

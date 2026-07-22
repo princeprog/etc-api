@@ -10,9 +10,10 @@ import {
 } from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { PERMISSIONS } from '../../common/auth/permissions';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { ExpenseReceiptDto } from './dto/expense-receipt.dto';
@@ -22,7 +23,7 @@ import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { VoidExpenseDto } from './dto/void-expense.dto';
 import { ExpensesService } from './expenses.service';
 
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(AccessTokenGuard, PermissionsGuard)
 @Controller('expenses')
 export class ExpensesController {
   constructor(private readonly expensesService: ExpensesService) {}
@@ -33,7 +34,7 @@ export class ExpensesController {
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.expensesCreate)
   create(@CurrentUser() user: CurrentUserType, @Body() dto: CreateExpenseDto) {
     return this.expensesService.create(user, dto);
   }

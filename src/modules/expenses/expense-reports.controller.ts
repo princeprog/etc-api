@@ -1,14 +1,15 @@
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 
-import { Roles } from '../../common/decorators/roles.decorator';
+import { PERMISSIONS } from '../../common/auth/permissions';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { ExpenseReportQueryDto } from './dto/expense-report-query.dto';
 import { ExpenseReportsService } from './expense-reports.service';
 
-@UseGuards(AccessTokenGuard, RolesGuard)
-@Roles('admin')
+@UseGuards(AccessTokenGuard, PermissionsGuard)
+@RequirePermissions(PERMISSIONS.expenseReportsView)
 @Controller('expense-reports')
 export class ExpenseReportsController {
   constructor(private readonly expenseReportsService: ExpenseReportsService) {}

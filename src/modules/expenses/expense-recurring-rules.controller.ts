@@ -10,16 +10,17 @@ import {
 } from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { PERMISSIONS } from '../../common/auth/permissions';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 import { CreateExpenseRecurringRuleDto } from './dto/create-expense-recurring-rule.dto';
 import { ListExpenseRecurringRulesQueryDto } from './dto/list-expense-recurring-rules-query.dto';
 import { UpdateExpenseRecurringRuleDto } from './dto/update-expense-recurring-rule.dto';
 import { ExpenseRecurringRulesService } from './expense-recurring-rules.service';
 
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(AccessTokenGuard, PermissionsGuard)
 @Controller('expense-recurring-rules')
 export class ExpenseRecurringRulesController {
   constructor(
@@ -32,7 +33,7 @@ export class ExpenseRecurringRulesController {
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.expensesCreate)
   create(
     @CurrentUser() user: CurrentUserType,
     @Body() dto: CreateExpenseRecurringRuleDto,
@@ -46,7 +47,7 @@ export class ExpenseRecurringRulesController {
   }
 
   @Patch(':id')
-  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.expensesUpdate)
   update(
     @CurrentUser() user: CurrentUserType,
     @Param('id') id: string,
@@ -56,7 +57,7 @@ export class ExpenseRecurringRulesController {
   }
 
   @Post(':id/deactivate')
-  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.expensesUpdate)
   deactivate(@CurrentUser() user: CurrentUserType, @Param('id') id: string) {
     return this.expenseRecurringRulesService.deactivate(user, id);
   }

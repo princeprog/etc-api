@@ -10,16 +10,17 @@ import {
 } from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { PERMISSIONS } from '../../common/auth/permissions';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AccessTokenGuard } from '../../common/guards/access-token.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { CurrentUser as CurrentUserType } from '../../common/types/auth.types';
 import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
 import { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto';
 import { ExpenseCategoriesService } from './expense-categories.service';
 import { parseBoolean } from './expenses.helpers';
 
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(AccessTokenGuard, PermissionsGuard)
 @Controller('expense-categories')
 export class ExpenseCategoriesController {
   constructor(
@@ -34,7 +35,7 @@ export class ExpenseCategoriesController {
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.expenseCategoriesManage)
   create(
     @CurrentUser() user: CurrentUserType,
     @Body() dto: CreateExpenseCategoryDto,
@@ -43,7 +44,7 @@ export class ExpenseCategoriesController {
   }
 
   @Patch(':id')
-  @Roles('admin')
+  @RequirePermissions(PERMISSIONS.expenseCategoriesManage)
   update(
     @CurrentUser() user: CurrentUserType,
     @Param('id') id: string,
