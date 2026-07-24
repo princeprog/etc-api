@@ -1,12 +1,18 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { ActivityHistoryModule } from '../activity-history/activity-history.module';
+import { LeadAssignmentModule } from '../lead-assignment/lead-assignment.module';
 import { LeadPipelineModule } from '../lead-pipeline/lead-pipeline.module';
 import { BuyerLeadsService } from './buyer_leads.service';
 import { BuyerLeadsController } from './buyer_leads.controller';
 
 @Module({
-  imports: [AuthModule, ActivityHistoryModule, LeadPipelineModule],
+  imports: [
+    AuthModule,
+    ActivityHistoryModule,
+    LeadAssignmentModule,
+    LeadPipelineModule,
+  ],
   controllers: [BuyerLeadsController],
   providers: [BuyerLeadsService],
 })

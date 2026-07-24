@@ -14,6 +14,10 @@ import { hashPassword } from '../src/common/utils/auth.utils';
 
 const ADMIN_EMAIL = 'buyerlead.admin@example.com';
 const STAFF_EMAIL = 'activity.staff@example.com';
+const LEAD_STAFF_EMAIL = 'lead.staff@example.com';
+const OTHER_STAFF_EMAIL = 'lead.other.staff@example.com';
+const DISABLED_STAFF_EMAIL = 'lead.disabled.staff@example.com';
+const PASSWORD_CHANGE_STAFF_EMAIL = 'lead.password-change.staff@example.com';
 const PASSWORD = 'Password123!';
 
 describe('Buyer leads and follow-ups workflow (e2e)', () => {
@@ -195,6 +199,123 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .expect(400);
   });
 
+  it('assigns buyer and seller leads created by staff to the staff creator', async () => {
+    const staffCookies = await createAndLoginStaff(app, db, LEAD_STAFF_EMAIL);
+    const otherStaff = await createStaffUser(db, OTHER_STAFF_EMAIL);
+
+    const buyerResponse = await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', staffCookies)
+      .send({
+        buyerName: 'Staff Created Buyer',
+        contactNumber: '09170001001',
+        assigneeUserId: otherStaff.id,
+      })
+      .expect(201);
+
+    expect(buyerResponse.body.buyerLead.assigneeUserId).toBe(
+      (await findUserByEmail(db, LEAD_STAFF_EMAIL)).id,
+    );
+
+    const sellerResponse = await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', staffCookies)
+      .send({
+        sellerName: 'Staff Created Seller',
+        contactNumber: '09175551001',
+        vehicleBrand: 'Honda',
+        vehicleModel: 'City',
+        assigneeUserId: otherStaff.id,
+      })
+      .expect(201);
+
+    expect(sellerResponse.body.sellerLead.assigneeUserId).toBe(
+      (await findUserByEmail(db, LEAD_STAFF_EMAIL)).id,
+    );
+  });
+
+  it('requires admins to choose an eligible staff assignee when creating leads', async () => {
+    await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Admin Missing Assignee Buyer',
+        contactNumber: '09170001002',
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', authCookies)
+      .send({
+        sellerName: 'Admin Missing Assignee Seller',
+        contactNumber: '09175551002',
+        vehicleBrand: 'Toyota',
+        vehicleModel: 'Vios',
+      })
+      .expect(400);
+  });
+
+  it('lets admins assign new leads only to active ready staff users', async () => {
+    const eligibleStaff = await createStaffUser(db, LEAD_STAFF_EMAIL);
+    const disabledStaff = await createStaffUser(db, DISABLED_STAFF_EMAIL, {
+      active: false,
+    });
+    const passwordChangeStaff = await createStaffUser(
+      db,
+      PASSWORD_CHANGE_STAFF_EMAIL,
+      {
+        mustChangePassword: true,
+      },
+    );
+    const adminUser = await findUserByEmail(db, ADMIN_EMAIL);
+
+    const buyerResponse = await request(app.getHttpServer())
+      .post('/buyer-leads')
+      .set('Cookie', authCookies)
+      .send({
+        buyerName: 'Admin Assigned Buyer',
+        contactNumber: '09170001003',
+        assigneeUserId: eligibleStaff.id,
+      })
+      .expect(201);
+
+    expect(buyerResponse.body.buyerLead.assigneeUserId).toBe(eligibleStaff.id);
+
+    const sellerResponse = await request(app.getHttpServer())
+      .post('/seller-leads')
+      .set('Cookie', authCookies)
+      .send({
+        sellerName: 'Admin Assigned Seller',
+        contactNumber: '09175551003',
+        vehicleBrand: 'Ford',
+        vehicleModel: 'Ranger',
+        assigneeUserId: eligibleStaff.id,
+      })
+      .expect(201);
+
+    expect(sellerResponse.body.sellerLead.assigneeUserId).toBe(
+      eligibleStaff.id,
+    );
+
+    for (const assigneeUserId of [
+      adminUser.id,
+      disabledStaff.id,
+      passwordChangeStaff.id,
+      '00000000-0000-0000-0000-000000000000',
+    ]) {
+      await request(app.getHttpServer())
+        .post('/buyer-leads')
+        .set('Cookie', authCookies)
+        .send({
+          buyerName: 'Invalid Admin Assigned Buyer',
+          contactNumber: '09170001004',
+          assigneeUserId,
+        })
+        .expect(400);
+    }
+  });
+
   it('allows Reserved buyer status without manual vehicle links', async () => {
     const createResponse = await createBuyerLead(app, authCookies);
     const buyerLeadId = createResponse.body.buyerLead.id;
@@ -270,10 +391,8 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
   });
 
-  it(
-    'filters and paginates buyer leads, seller leads, and follow-ups from query params',
-    async () => {
-      const assigneeUserId = await currentUserId(app);
+  it('filters and paginates buyer leads, seller leads, and follow-ups from query params', async () => {
+    const assigneeUserId = await currentUserId(app);
 
     await request(app.getHttpServer())
       .post('/buyer-leads')
@@ -410,7 +529,9 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .expect(201);
 
     const filteredFollowUps = await request(app.getHttpServer())
-      .get(`/follow-ups?status=Due&leadType=buyer&assigneeUserId=${assigneeUserId}&search=financing&page=1&pageSize=1`)
+      .get(
+        `/follow-ups?status=Due&leadType=buyer&assigneeUserId=${assigneeUserId}&search=financing&page=1&pageSize=1`,
+      )
       .set('Cookie', authCookies)
       .expect(200);
 
@@ -422,16 +543,14 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
         totalPages: 1,
       }),
     );
-      expect(filteredFollowUps.body.followUps).toEqual([
-        expect.objectContaining({
-          leadType: 'buyer',
-          note: 'Alpha callback about financing',
-          status: 'Due',
-        }),
-      ]);
-    },
-    60000,
-  );
+    expect(filteredFollowUps.body.followUps).toEqual([
+      expect.objectContaining({
+        leadType: 'buyer',
+        note: 'Alpha callback about financing',
+        status: 'Due',
+      }),
+    ]);
+  }, 60000);
 
   it('excludes won buyer leads when eligibleForSale is requested', async () => {
     const assigneeUserId = await currentUserId(app);
@@ -482,10 +601,8 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
   });
 
-  it(
-    'derives buyer lead pipeline states across follow-up, reservation, win, and staleness',
-    async () => {
-      const assigneeUserId = await currentUserId(app);
+  it('derives buyer lead pipeline states across follow-up, reservation, win, and staleness', async () => {
+    const assigneeUserId = await currentUserId(app);
 
     const freshBuyer = await request(app.getHttpServer())
       .post('/buyer-leads')
@@ -670,21 +787,17 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .set('Cookie', authCookies)
       .expect(200);
 
-      expect(readyFilteredResponse.body.buyerLeads).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: readyBuyer.body.buyerLead.id,
-          }),
-        ]),
-      );
-    },
-    15000,
-  );
+    expect(readyFilteredResponse.body.buyerLeads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: readyBuyer.body.buyerLead.id,
+        }),
+      ]),
+    );
+  }, 15000);
 
-  it(
-    'derives seller lead pipeline states for follow-up, missing details, acquisition review, conversion, and staleness',
-    async () => {
-      const assigneeUserId = await currentUserId(app);
+  it('derives seller lead pipeline states for follow-up, missing details, acquisition review, conversion, and staleness', async () => {
+    const assigneeUserId = await currentUserId(app);
 
     const sellerResponse = await request(app.getHttpServer())
       .post('/seller-leads')
@@ -887,56 +1000,50 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .set('Cookie', authCookies)
       .expect(200);
 
-      expect(readySellerFilteredResponse.body.sellerLeads).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: readySeller.body.sellerLead.id,
-          }),
-        ]),
-      );
-    },
-    15000,
-  );
+    expect(readySellerFilteredResponse.body.sellerLeads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: readySeller.body.sellerLead.id,
+        }),
+      ]),
+    );
+  }, 15000);
 
-  it(
-    'completes a follow-up and prevents duplicate completion',
-    async () => {
-      const createResponse = await createBuyerLead(app, authCookies);
-      const buyerLeadId = createResponse.body.buyerLead.id;
+  it('completes a follow-up and prevents duplicate completion', async () => {
+    const createResponse = await createBuyerLead(app, authCookies);
+    const buyerLeadId = createResponse.body.buyerLead.id;
 
-      const followUpResponse = await request(app.getHttpServer())
-        .post('/follow-ups')
-        .set('Cookie', authCookies)
-        .send({
-          leadType: 'buyer',
-          buyerLeadId,
-          assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
-          dueAt: new Date(Date.now() + 3600_000).toISOString(),
-          note: 'Check reservation interest',
-        })
-        .expect(201);
+    const followUpResponse = await request(app.getHttpServer())
+      .post('/follow-ups')
+      .set('Cookie', authCookies)
+      .send({
+        leadType: 'buyer',
+        buyerLeadId,
+        assigneeUserId: createResponse.body.buyerLead.assigneeUserId,
+        dueAt: new Date(Date.now() + 3600_000).toISOString(),
+        note: 'Check reservation interest',
+      })
+      .expect(201);
 
-      const completeResponse = await request(app.getHttpServer())
-        .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
-        .set('Cookie', authCookies)
-        .send({
-          outcomeNote: 'Buyer confirmed they will visit tomorrow',
-        })
-        .expect(200);
+    const completeResponse = await request(app.getHttpServer())
+      .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+      .set('Cookie', authCookies)
+      .send({
+        outcomeNote: 'Buyer confirmed they will visit tomorrow',
+      })
+      .expect(200);
 
-      expect(completeResponse.body.followUp.status).toBe('Completed');
-      expect(completeResponse.body.followUp.completedAt).toBeTruthy();
+    expect(completeResponse.body.followUp.status).toBe('Completed');
+    expect(completeResponse.body.followUp.completedAt).toBeTruthy();
 
-      await request(app.getHttpServer())
-        .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
-        .set('Cookie', authCookies)
-        .send({
-          outcomeNote: 'Second completion should fail',
-        })
-        .expect(400);
-    },
-    30000,
-  );
+    await request(app.getHttpServer())
+      .post(`/follow-ups/${followUpResponse.body.followUp.id}/complete`)
+      .set('Cookie', authCookies)
+      .send({
+        outcomeNote: 'Second completion should fail',
+      })
+      .expect(400);
+  }, 30000);
 
   it('paginates entity and global activity history responses while keeping events in the payload', async () => {
     const firstLeadResponse = await request(app.getHttpServer())
@@ -970,7 +1077,9 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .expect(201);
 
     const entityHistoryResponse = await request(app.getHttpServer())
-      .get(`/activity-history/buyer_lead/${firstLeadResponse.body.buyerLead.id}?page=1&pageSize=2`)
+      .get(
+        `/activity-history/buyer_lead/${firstLeadResponse.body.buyerLead.id}?page=1&pageSize=2`,
+      )
       .set('Cookie', authCookies)
       .expect(200);
 
@@ -1016,7 +1125,9 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
     );
 
     const legacyLimitResponse = await request(app.getHttpServer())
-      .get(`/activity-history/buyer_lead/${firstLeadResponse.body.buyerLead.id}?limit=1`)
+      .get(
+        `/activity-history/buyer_lead/${firstLeadResponse.body.buyerLead.id}?limit=1`,
+      )
       .set('Cookie', authCookies)
       .expect(200);
 
@@ -1087,8 +1198,14 @@ describe('Buyer leads and follow-ups workflow (e2e)', () => {
       .expect(201);
 
     const staffCookies = [
-      extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_access_token'),
-      extractCookie(staffLoginResponse.headers['set-cookie'], 'etc_refresh_token'),
+      extractCookie(
+        staffLoginResponse.headers['set-cookie'],
+        'etc_access_token',
+      ),
+      extractCookie(
+        staffLoginResponse.headers['set-cookie'],
+        'etc_refresh_token',
+      ),
     ];
 
     const staffHistoryResponse = await request(app.getHttpServer())
@@ -1179,6 +1296,64 @@ async function resetTestData(db: Kysely<DB>) {
     .execute();
   await db
     .deleteFrom('authentication.users')
-    .where('email', '=', STAFF_EMAIL)
+    .where('email', 'in', [
+      STAFF_EMAIL,
+      LEAD_STAFF_EMAIL,
+      OTHER_STAFF_EMAIL,
+      DISABLED_STAFF_EMAIL,
+      PASSWORD_CHANGE_STAFF_EMAIL,
+    ])
     .execute();
+}
+
+async function createAndLoginStaff(
+  app: INestApplication<App>,
+  db: Kysely<DB>,
+  email: string,
+) {
+  await createStaffUser(db, email);
+
+  const loginResponse = await request(app.getHttpServer())
+    .post('/auth/login')
+    .send({
+      email,
+      password: PASSWORD,
+    })
+    .expect(201);
+
+  return [
+    extractCookie(loginResponse.headers['set-cookie'], 'etc_access_token'),
+    extractCookie(loginResponse.headers['set-cookie'], 'etc_refresh_token'),
+  ];
+}
+
+async function createStaffUser(
+  db: Kysely<DB>,
+  email: string,
+  options: { active?: boolean; mustChangePassword?: boolean } = {},
+) {
+  return db
+    .insertInto('authentication.users')
+    .values({
+      email,
+      password_hash: await hashPassword(PASSWORD),
+      full_name: email
+        .split('@')[0]
+        .split('.')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' '),
+      role: 'staff',
+      active: options.active ?? true,
+      must_change_password: options.mustChangePassword ?? false,
+    })
+    .returning(['id'])
+    .executeTakeFirstOrThrow();
+}
+
+async function findUserByEmail(db: Kysely<DB>, email: string) {
+  return db
+    .selectFrom('authentication.users')
+    .select(['id'])
+    .where('email', '=', email)
+    .executeTakeFirstOrThrow();
 }

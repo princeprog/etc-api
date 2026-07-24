@@ -16,6 +16,7 @@ import type { CurrentUser } from '../../common/types/auth.types';
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { LeadAssignmentService } from '../lead-assignment/lead-assignment.service';
 import { LeadPipelineService } from '../lead-pipeline/lead-pipeline.service';
 import {
   mapBuyerLeadResponse,
@@ -30,10 +31,17 @@ export class BuyerLeadsService {
   constructor(
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly leadAssignmentService: LeadAssignmentService,
     private readonly leadPipelineService: LeadPipelineService,
   ) {}
 
   async create(user: CurrentUser, createBuyerLeadDto: CreateBuyerLeadDto) {
+    const assigneeUserId =
+      await this.leadAssignmentService.resolveCreateAssignee(
+        user,
+        createBuyerLeadDto.assigneeUserId,
+      );
+
     const insertedLead = await this.db
       .insertInto('crm.buyer_leads')
       .values({
@@ -51,7 +59,7 @@ export class BuyerLeadsService {
         desired_budget: createBuyerLeadDto.desiredBudget ?? null,
         notes: createBuyerLeadDto.notes ?? null,
         status: parseBuyerLeadStatus(createBuyerLeadDto.status, 'New Inquiry'),
-        assignee_user_id: createBuyerLeadDto.assigneeUserId ?? null,
+        assignee_user_id: assigneeUserId,
         closing_note: createBuyerLeadDto.closingNote ?? null,
       })
       .returning(['id'])
@@ -66,7 +74,7 @@ export class BuyerLeadsService {
       metadata: {
         buyerName: createBuyerLeadDto.buyerName,
         status: parseBuyerLeadStatus(createBuyerLeadDto.status, 'New Inquiry'),
-        assigneeUserId: createBuyerLeadDto.assigneeUserId ?? null,
+        assigneeUserId,
       },
     });
 
@@ -76,7 +84,9 @@ export class BuyerLeadsService {
   async findAll(query: ListBuyerLeadsQueryDto = {}) {
     const pagination = parsePagination(query);
     const search = normalizeSearch(query.search);
-    const status = query.status ? parseBuyerLeadStatus(query.status, 'New Inquiry') : undefined;
+    const status = query.status
+      ? parseBuyerLeadStatus(query.status, 'New Inquiry')
+      : undefined;
     const eligibleForSale = this.parseBooleanQuery(query.eligibleForSale);
     const sort = this.parseSort(query.sortBy, query.sortOrder);
 
@@ -103,7 +113,9 @@ export class BuyerLeadsService {
     }
 
     let total = 0;
-    let buyerLeadItems: Awaited<ReturnType<BuyerLeadsService['mapBuyerLeadList']>> = [];
+    let buyerLeadItems: Awaited<
+      ReturnType<BuyerLeadsService['mapBuyerLeadList']>
+    > = [];
 
     if (query.pipelineState) {
       const allLeads = await buyerLeadsQuery
@@ -152,7 +164,11 @@ export class BuyerLeadsService {
     return { buyerLead: await this.getBuyerLeadOrThrow(id) };
   }
 
-  async update(user: CurrentUser, id: string, updateBuyerLeadDto: UpdateBuyerLeadDto) {
+  async update(
+    user: CurrentUser,
+    id: string,
+    updateBuyerLeadDto: UpdateBuyerLeadDto,
+  ) {
     const existingLead = await this.getLeadRecordOrThrow(id);
     const nextStatus = updateBuyerLeadDto.status
       ? parseBuyerLeadStatus(updateBuyerLeadDto.status, 'New Inquiry')
@@ -241,13 +257,16 @@ export class BuyerLeadsService {
       contact_number: nextContactNumber,
       desired_budget:
         updateBuyerLeadDto.desiredBudget !== undefined
-          ? updateBuyerLeadDto.desiredBudget ?? null
+          ? (updateBuyerLeadDto.desiredBudget ?? null)
           : existingLead.desired_budget,
       inquiry_source:
         updateBuyerLeadDto.inquirySource !== undefined
-          ? updateBuyerLeadDto.inquirySource ?? null
+          ? (updateBuyerLeadDto.inquirySource ?? null)
           : existingLead.inquiry_source,
-      notes: updateBuyerLeadDto.notes !== undefined ? updateBuyerLeadDto.notes ?? null : existingLead.notes,
+      notes:
+        updateBuyerLeadDto.notes !== undefined
+          ? (updateBuyerLeadDto.notes ?? null)
+          : existingLead.notes,
       closing_note: nextClosingNote,
     });
 
@@ -290,8 +309,13 @@ export class BuyerLeadsService {
           entityType: 'buyer_lead',
           entityId: previous.id,
           actionType: 'buyer_lead.assignment_changed',
-          summary: next.assignee_user_id ? 'Buyer lead assignment changed' : 'Buyer lead unassigned',
-          metadata: { from: previous.assignee_user_id, to: next.assignee_user_id },
+          summary: next.assignee_user_id
+            ? 'Buyer lead assignment changed'
+            : 'Buyer lead unassigned',
+          metadata: {
+            from: previous.assignee_user_id,
+            to: next.assignee_user_id,
+          },
         }),
       );
     }
@@ -303,8 +327,13 @@ export class BuyerLeadsService {
           entityType: 'buyer_lead',
           entityId: previous.id,
           actionType: 'buyer_lead.closing_note_updated',
-          summary: previous.closing_note ? 'Buyer closing note updated' : 'Buyer closing note added',
-          metadata: { hadClosingNote: Boolean(previous.closing_note), hasClosingNote: Boolean(next.closing_note) },
+          summary: previous.closing_note
+            ? 'Buyer closing note updated'
+            : 'Buyer closing note added',
+          metadata: {
+            hadClosingNote: Boolean(previous.closing_note),
+            hasClosingNote: Boolean(next.closing_note),
+          },
         }),
       );
     }
@@ -326,9 +355,15 @@ export class BuyerLeadsService {
           metadata: {
             changedFields: [
               previous.buyer_name !== next.buyer_name ? 'buyerName' : null,
-              previous.contact_number !== next.contact_number ? 'contactNumber' : null,
-              previous.desired_budget !== next.desired_budget ? 'desiredBudget' : null,
-              previous.inquiry_source !== next.inquiry_source ? 'inquirySource' : null,
+              previous.contact_number !== next.contact_number
+                ? 'contactNumber'
+                : null,
+              previous.desired_budget !== next.desired_budget
+                ? 'desiredBudget'
+                : null,
+              previous.inquiry_source !== next.inquiry_source
+                ? 'inquirySource'
+                : null,
               previous.notes !== next.notes ? 'notes' : null,
             ].filter(Boolean),
           },
@@ -345,23 +380,24 @@ export class BuyerLeadsService {
       this.getVehicleSummariesForBuyerLeadIds([id]),
       this.leadPipelineService.getBuyerLeadPipelineContext([id]),
     ]);
-    const pipelineByLeadId = await this.leadPipelineService.buildBuyerLeadPipelines([
-      {
-        id: lead.id,
-        status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
-        contactNumber: lead.contact_number,
-        email: lead.email,
-        facebookName: lead.facebook_name,
-        assigneeUserId: lead.assignee_user_id,
-        closingNote: lead.closing_note,
-        latestActivityAt: lead.latest_activity_at,
-        createdAt: lead.created_at,
-        updatedAt: lead.updated_at,
-        vehicles: pipelineContext.get(lead.id)?.vehicles ?? [],
-        followUps: pipelineContext.get(lead.id)?.followUps ?? [],
-        sales: pipelineContext.get(lead.id)?.sales ?? [],
-      },
-    ]);
+    const pipelineByLeadId =
+      await this.leadPipelineService.buildBuyerLeadPipelines([
+        {
+          id: lead.id,
+          status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
+          contactNumber: lead.contact_number,
+          email: lead.email,
+          facebookName: lead.facebook_name,
+          assigneeUserId: lead.assignee_user_id,
+          closingNote: lead.closing_note,
+          latestActivityAt: lead.latest_activity_at,
+          createdAt: lead.created_at,
+          updatedAt: lead.updated_at,
+          vehicles: pipelineContext.get(lead.id)?.vehicles ?? [],
+          followUps: pipelineContext.get(lead.id)?.followUps ?? [],
+          sales: pipelineContext.get(lead.id)?.sales ?? [],
+        },
+      ]);
 
     return mapBuyerLeadResponse({
       ...lead,
@@ -397,20 +433,20 @@ export class BuyerLeadsService {
 
   private async mapBuyerLeadList(
     leads: Array<{
-      id: string
-      buyer_name: string
-      contact_number: string
-      email: string | null
-      facebook_name: string | null
-      inquiry_source: string | null
-      desired_budget: string | null
-      notes: string | null
-      status: string
-      assignee_user_id: string | null
-      latest_activity_at: Date | null
-      closing_note: string | null
-      created_at: Date
-      updated_at: Date
+      id: string;
+      buyer_name: string;
+      contact_number: string;
+      email: string | null;
+      facebook_name: string | null;
+      inquiry_source: string | null;
+      desired_budget: string | null;
+      notes: string | null;
+      status: string;
+      assignee_user_id: string | null;
+      latest_activity_at: Date | null;
+      closing_note: string | null;
+      created_at: Date;
+      updated_at: Date;
     }>,
   ) {
     const leadIds = leads.map((lead) => lead.id);
@@ -418,23 +454,24 @@ export class BuyerLeadsService {
       this.getVehicleSummariesForBuyerLeadIds(leadIds),
       this.leadPipelineService.getBuyerLeadPipelineContext(leadIds),
     ]);
-    const pipelineByLeadId = await this.leadPipelineService.buildBuyerLeadPipelines(
-      leads.map((lead) => ({
-        id: lead.id,
-        status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
-        contactNumber: lead.contact_number,
-        email: lead.email,
-        facebookName: lead.facebook_name,
-        assigneeUserId: lead.assignee_user_id,
-        closingNote: lead.closing_note,
-        latestActivityAt: lead.latest_activity_at,
-        createdAt: lead.created_at,
-        updatedAt: lead.updated_at,
-        vehicles: pipelineContext.get(lead.id)?.vehicles ?? [],
-        followUps: pipelineContext.get(lead.id)?.followUps ?? [],
-        sales: pipelineContext.get(lead.id)?.sales ?? [],
-      })),
-    );
+    const pipelineByLeadId =
+      await this.leadPipelineService.buildBuyerLeadPipelines(
+        leads.map((lead) => ({
+          id: lead.id,
+          status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
+          contactNumber: lead.contact_number,
+          email: lead.email,
+          facebookName: lead.facebook_name,
+          assigneeUserId: lead.assignee_user_id,
+          closingNote: lead.closing_note,
+          latestActivityAt: lead.latest_activity_at,
+          createdAt: lead.created_at,
+          updatedAt: lead.updated_at,
+          vehicles: pipelineContext.get(lead.id)?.vehicles ?? [],
+          followUps: pipelineContext.get(lead.id)?.followUps ?? [],
+          sales: pipelineContext.get(lead.id)?.sales ?? [],
+        })),
+      );
 
     return leads.map((lead) =>
       mapBuyerLeadResponse({
@@ -532,7 +569,6 @@ export class BuyerLeadsService {
 
     return value.toLowerCase() === 'true';
   }
-
 }
 
 type BuyerLeadVehicleSummary = {

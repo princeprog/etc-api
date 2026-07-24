@@ -16,6 +16,7 @@ import {
 import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import { ActivityHistoryService } from '../activity-history/activity-history.service';
+import { LeadAssignmentService } from '../lead-assignment/lead-assignment.service';
 import { LeadPipelineService } from '../lead-pipeline/lead-pipeline.service';
 import { VehiclesService } from '../vehicles/vehicles.service';
 import {
@@ -41,10 +42,17 @@ export class SellerLeadsService {
     @Inject(DATABASE) private readonly db: Kysely<DB>,
     private readonly vehiclesService: VehiclesService,
     private readonly activityHistoryService: ActivityHistoryService,
+    private readonly leadAssignmentService: LeadAssignmentService,
     private readonly leadPipelineService: LeadPipelineService,
   ) {}
 
   async create(user: CurrentUser, createSellerLeadDto: CreateSellerLeadDto) {
+    const assigneeUserId =
+      await this.leadAssignmentService.resolveCreateAssignee(
+        user,
+        createSellerLeadDto.assigneeUserId,
+      );
+
     const sellerLead = await this.db
       .insertInto('crm.seller_leads')
       .values({
@@ -85,7 +93,7 @@ export class SellerLeadsService {
           createSellerLeadDto.status,
           'New Inquiry',
         ),
-        assignee_user_id: createSellerLeadDto.assigneeUserId ?? null,
+        assignee_user_id: assigneeUserId,
         closing_note: createSellerLeadDto.closingNote ?? null,
       })
       .returningAll()
@@ -102,6 +110,7 @@ export class SellerLeadsService {
         vehicleBrand: sellerLead.vehicle_brand,
         vehicleModel: sellerLead.vehicle_model,
         status: sellerLead.status,
+        assigneeUserId,
       },
     });
 
