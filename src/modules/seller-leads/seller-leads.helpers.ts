@@ -171,6 +171,12 @@ export function mapSellerLeadResponse(lead: {
   approved_by_user_id: string | null;
   status: SellerLeadStatus;
   assignee_user_id: string | null;
+  assignee?: {
+    id: string;
+    fullName: string;
+    email: string;
+    roleName: string;
+  } | null;
   latest_activity_at: Date | null;
   closing_note: string | null;
   created_at: Date;
@@ -200,6 +206,7 @@ export function mapSellerLeadResponse(lead: {
     approvedByUserId: lead.approved_by_user_id,
     status: lead.status,
     assigneeUserId: lead.assignee_user_id,
+    assignee: lead.assignee ?? null,
     latestActivityAt: lead.latest_activity_at,
     closingNote: lead.closing_note,
     pipeline: lead.pipeline ?? null,

@@ -563,6 +563,10 @@ export class SellerLeadsService {
       [sellerLead.id],
       executor,
     );
+    const assigneeByUserId = await this.getAssigneeSummaries(
+      [sellerLead.assignee_user_id],
+      executor,
+    );
     const pipelineByLeadId =
       await this.leadPipelineService.buildSellerLeadPipelines([
         {
@@ -586,6 +590,9 @@ export class SellerLeadsService {
 
     return mapSellerLeadResponse({
       ...sellerLead,
+      assignee: sellerLead.assignee_user_id
+        ? (assigneeByUserId.get(sellerLead.assignee_user_id) ?? null)
+        : null,
       pipeline: pipelineByLeadId.get(sellerLead.id) ?? null,
     });
   }
@@ -599,7 +606,12 @@ export class SellerLeadsService {
       return [];
     }
 
-    const pipelineContext = await this.getSellerLeadPipelineContext(leadIds);
+    const [pipelineContext, assigneeByUserId] = await Promise.all([
+      this.getSellerLeadPipelineContext(leadIds),
+      this.getAssigneeSummaries(
+        sellerLeads.map((lead) => lead.assignee_user_id),
+      ),
+    ]);
 
     const pipelineByLeadId =
       await this.leadPipelineService.buildSellerLeadPipelines(
@@ -625,9 +637,50 @@ export class SellerLeadsService {
     return sellerLeads.map((lead) =>
       mapSellerLeadResponse({
         ...lead,
+        assignee: lead.assignee_user_id
+          ? (assigneeByUserId.get(lead.assignee_user_id) ?? null)
+          : null,
         pipeline: pipelineByLeadId.get(lead.id) ?? null,
       }),
     );
+  }
+
+  private async getAssigneeSummaries(
+    assigneeUserIds: Array<string | null>,
+    executor?: Kysely<DB> | Transaction<DB>,
+  ) {
+    const userIds = [...new Set(assigneeUserIds.filter(Boolean))] as string[];
+    const byUserId = new Map<
+      string,
+      { id: string; fullName: string; email: string; roleName: string }
+    >();
+
+    if (userIds.length === 0) {
+      return byUserId;
+    }
+
+    const db = executor ?? this.db;
+    const users = await db
+      .selectFrom('authentication.users')
+      .innerJoin(
+        'authentication.roles',
+        'authentication.roles.id',
+        'authentication.users.role_id',
+      )
+      .select([
+        'authentication.users.id as id',
+        'authentication.users.full_name as fullName',
+        'authentication.users.email as email',
+        'authentication.roles.name as roleName',
+      ])
+      .where('authentication.users.id', 'in', userIds)
+      .execute();
+
+    for (const user of users) {
+      byUserId.set(user.id, user);
+    }
+
+    return byUserId;
   }
 
   private async getSellerLeadPipelineContext(

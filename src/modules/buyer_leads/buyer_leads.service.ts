@@ -380,6 +380,9 @@ export class BuyerLeadsService {
       this.getVehicleSummariesForBuyerLeadIds([id]),
       this.leadPipelineService.getBuyerLeadPipelineContext([id]),
     ]);
+    const assigneeByUserId = await this.getAssigneeSummaries([
+      lead.assignee_user_id,
+    ]);
     const pipelineByLeadId =
       await this.leadPipelineService.buildBuyerLeadPipelines([
         {
@@ -402,6 +405,9 @@ export class BuyerLeadsService {
     return mapBuyerLeadResponse({
       ...lead,
       status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
+      assignee: lead.assignee_user_id
+        ? (assigneeByUserId.get(lead.assignee_user_id) ?? null)
+        : null,
       vehicles: vehicles.get(id) ?? [],
       pipeline: pipelineByLeadId.get(id),
     });
@@ -454,6 +460,9 @@ export class BuyerLeadsService {
       this.getVehicleSummariesForBuyerLeadIds(leadIds),
       this.leadPipelineService.getBuyerLeadPipelineContext(leadIds),
     ]);
+    const assigneeByUserId = await this.getAssigneeSummaries(
+      leads.map((lead) => lead.assignee_user_id),
+    );
     const pipelineByLeadId =
       await this.leadPipelineService.buildBuyerLeadPipelines(
         leads.map((lead) => ({
@@ -477,10 +486,47 @@ export class BuyerLeadsService {
       mapBuyerLeadResponse({
         ...lead,
         status: parseBuyerLeadStatus(lead.status, 'New Inquiry'),
+        assignee: lead.assignee_user_id
+          ? (assigneeByUserId.get(lead.assignee_user_id) ?? null)
+          : null,
         vehicles: vehicleMap.get(lead.id) ?? [],
         pipeline: pipelineByLeadId.get(lead.id),
       }),
     );
+  }
+
+  private async getAssigneeSummaries(assigneeUserIds: Array<string | null>) {
+    const userIds = [...new Set(assigneeUserIds.filter(Boolean))] as string[];
+    const byUserId = new Map<
+      string,
+      { id: string; fullName: string; email: string; roleName: string }
+    >();
+
+    if (userIds.length === 0) {
+      return byUserId;
+    }
+
+    const users = await this.db
+      .selectFrom('authentication.users')
+      .innerJoin(
+        'authentication.roles',
+        'authentication.roles.id',
+        'authentication.users.role_id',
+      )
+      .select([
+        'authentication.users.id as id',
+        'authentication.users.full_name as fullName',
+        'authentication.users.email as email',
+        'authentication.roles.name as roleName',
+      ])
+      .where('authentication.users.id', 'in', userIds)
+      .execute();
+
+    for (const user of users) {
+      byUserId.set(user.id, user);
+    }
+
+    return byUserId;
   }
 
   private async getVehicleSummariesForBuyerLeadIds(buyerLeadIds: string[]) {

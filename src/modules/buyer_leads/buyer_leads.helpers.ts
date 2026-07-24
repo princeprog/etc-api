@@ -39,6 +39,12 @@ export function mapBuyerLeadResponse(lead: {
   notes: string | null;
   status: BuyerLeadStatus;
   assignee_user_id: string | null;
+  assignee?: {
+    id: string;
+    fullName: string;
+    email: string;
+    roleName: string;
+  } | null;
   latest_activity_at: Date | null;
   closing_note: string | null;
   created_at: Date;
@@ -64,6 +70,7 @@ export function mapBuyerLeadResponse(lead: {
     notes: lead.notes,
     status: lead.status,
     assigneeUserId: lead.assignee_user_id,
+    assignee: lead.assignee ?? null,
     latestActivityAt: lead.latest_activity_at,
     closingNote: lead.closing_note,
     createdAt: lead.created_at,
