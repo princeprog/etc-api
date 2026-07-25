@@ -79,7 +79,45 @@ export class FinancingService {
       .orderBy('name')
       .execute();
 
-    return { partners: partners.map(mapPartner) };
+    if (!partners.length) {
+      return { partners: [] };
+    }
+
+    const representatives = await this.db
+      .selectFrom('finance.financing_partner_representatives as representative')
+      .innerJoin('authentication.users as user', 'user.id', 'representative.user_id')
+      .leftJoin('authentication.roles as role', 'role.id', 'user.role_id')
+      .select([
+        'representative.id as id',
+        'representative.partner_id as partnerId',
+        'representative.user_id as userId',
+        'representative.is_active as isActive',
+        'representative.created_at as createdAt',
+        'representative.updated_at as updatedAt',
+        'user.full_name as fullName',
+        'user.email as email',
+        'role.name as roleName',
+      ])
+      .where(
+        'representative.partner_id',
+        'in',
+        partners.map((partner) => partner.id),
+      )
+      .orderBy('user.full_name')
+      .execute();
+    const representativesByPartner = groupBy(
+      representatives,
+      (representative) => representative.partnerId,
+    );
+
+    return {
+      partners: partners.map((partner) =>
+        mapPartner(
+          partner,
+          representativesByPartner.get(partner.id)?.map(mapRepresentativeDetail) ?? [],
+        ),
+      ),
+    };
   }
 
   async createPartner(user: CurrentUser, dto: CreateFinancingPartnerDto) {
@@ -1601,7 +1639,7 @@ export class FinancingService {
   }
 }
 
-function mapPartner(row: any) {
+function mapPartner(row: any, representatives: ReturnType<typeof mapRepresentativeDetail>[] = []) {
   return {
     id: row.id,
     name: row.name,
@@ -1610,6 +1648,7 @@ function mapPartner(row: any) {
     email: row.email,
     notes: row.notes,
     isActive: row.is_active,
+    representatives,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1623,6 +1662,20 @@ function mapRepresentative(row: any) {
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapRepresentativeDetail(row: any) {
+  return {
+    id: row.id,
+    partnerId: row.partnerId,
+    userId: row.userId,
+    fullName: row.fullName,
+    email: row.email,
+    roleName: row.roleName,
+    isActive: row.isActive,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
