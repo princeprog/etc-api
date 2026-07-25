@@ -64,6 +64,39 @@ const TERMINAL_APPLICATION_STATUSES: FinancingApplicationStatus[] = [
   'cancelled',
 ];
 
+const applicationSummarySelects = [
+  'app.id as id',
+  'app.application_number as application_number',
+  'app.buyer_lead_id as buyer_lead_id',
+  'app.vehicle_id as vehicle_id',
+  'app.assigned_staff_user_id as assigned_staff_user_id',
+  'app.partner_id as partner_id',
+  'app.representative_user_id as representative_user_id',
+  'app.status as status',
+  'app.requested_amount as requested_amount',
+  'app.down_payment as down_payment',
+  'app.term_months as term_months',
+  'app.decision_note as decision_note',
+  'app.decided_at as decided_at',
+  'app.released_loan_amount as released_loan_amount',
+  'app.loan_released_at as loan_released_at',
+  'app.loan_release_reference as loan_release_reference',
+  'app.vehicle_released_at as vehicle_released_at',
+  'app.vehicle_release_note as vehicle_release_note',
+  'app.created_at as created_at',
+  'app.updated_at as updated_at',
+  'buyer.buyer_name as buyer_name',
+  'buyer.contact_number as buyer_contact_number',
+  'vehicle.stock_number as vehicle_stock_number',
+  'vehicle.year as vehicle_year',
+  'vehicle.brand as vehicle_brand',
+  'vehicle.model as vehicle_model',
+  'vehicle.variant as vehicle_variant',
+  'partner.name as partner_name',
+  'rep.full_name as representative_full_name',
+  'staff.full_name as assigned_staff_full_name',
+] as const;
+
 @Injectable()
 export class FinancingService {
   constructor(
@@ -356,7 +389,7 @@ export class FinancingService {
       .select(({ fn }) => fn.countAll<number>().as('total'))
       .executeTakeFirstOrThrow();
     const rows = await baseQuery
-      .selectAll()
+      .select(applicationSummarySelects)
       .orderBy('app.updated_at', 'desc')
       .offset(pagination.offset)
       .limit(pagination.pageSize)
@@ -1004,7 +1037,7 @@ export class FinancingService {
 
   private async getApplicationResponse(id: string) {
     const row = await this.buildApplicationListQuery(systemAllFinancingUser())
-      .selectAll()
+      .select(applicationSummarySelects)
       .where('app.id', '=', id)
       .executeTakeFirst();
 
@@ -1712,24 +1745,26 @@ function mapApplicationSummary(row: any, progress: ReturnType<typeof defaultProg
     buyer: {
       id: row.buyer_lead_id,
       name: row.buyer_name,
-      contactNumber: row.contact_number,
+      contactNumber: row.buyer_contact_number,
     },
     vehicle: {
       id: row.vehicle_id,
-      stockNumber: row.stock_number,
-      label: [row.year, row.brand, row.model, row.variant].filter(Boolean).join(' '),
+      stockNumber: row.vehicle_stock_number,
+      label: [row.vehicle_year, row.vehicle_brand, row.vehicle_model, row.vehicle_variant]
+        .filter(Boolean)
+        .join(' '),
     },
     partner: {
       id: row.partner_id,
-      name: row.name,
+      name: row.partner_name,
     },
     representative: {
       id: row.representative_user_id,
-      name: row.full_name,
+      name: row.representative_full_name,
     },
     assignedStaff: {
       id: row.assigned_staff_user_id,
-      name: row.full_name_1 ?? row.full_name,
+      name: row.assigned_staff_full_name,
     },
     requirementProgress: progress,
     createdAt: row.created_at,
