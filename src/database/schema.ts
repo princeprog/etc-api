@@ -56,10 +56,17 @@ export type FollowUpNotificationType =
   | 'follow_up_due_today'
   | 'follow_up_overdue';
 export type VehicleNotificationType = 'vehicle_available';
+export type FinancingNotificationType =
+  | 'financing_requirements_submitted'
+  | 'financing_revision_requested'
+  | 'financing_approved'
+  | 'financing_rejected'
+  | 'financing_loan_released';
 export type NotificationType =
   | ExpenseNotificationType
   | FollowUpNotificationType
-  | VehicleNotificationType;
+  | VehicleNotificationType
+  | FinancingNotificationType;
 export type FinancingApplicationStatus =
   | 'draft'
   | 'collecting_requirements'
