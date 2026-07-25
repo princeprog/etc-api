@@ -955,6 +955,9 @@ export class FinancingService {
     const link = await this.getActiveUploadLink(token);
     this.verifyPublicSession(sessionToken, link.application_id);
     const app = await this.getApplicationModelOrThrow(link.application_id);
+    if (app.status === 'under_review') {
+      throw new BadRequestException('Requirements are already submitted and under review');
+    }
     this.assertUploadAllowed(app);
     await this.ensureRequiredDocumentsComplete(app.id);
 
