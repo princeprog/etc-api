@@ -160,6 +160,16 @@ export class FollowUpsService {
       .selectFrom('crm.follow_ups as fu')
       .leftJoin('crm.seller_leads as sl', 'sl.id', 'fu.seller_lead_id')
       .leftJoin('crm.buyer_leads as bl', 'bl.id', 'fu.buyer_lead_id')
+      .innerJoin(
+        'authentication.users as assignee',
+        'assignee.id',
+        'fu.assignee_user_id',
+      )
+      .innerJoin(
+        'authentication.roles as assignee_role',
+        'assignee_role.id',
+        'assignee.role_id',
+      )
       .$if(status === 'Completed', (qb) =>
         qb
           .where('fu.completed_at', 'is not', null)
@@ -252,6 +262,10 @@ export class FollowUpsService {
         'sl.vehicle_model',
         'bl.buyer_name',
         'bl.contact_number',
+        'assignee.id as assignee_id',
+        'assignee.full_name as assignee_full_name',
+        'assignee.email as assignee_email',
+        'assignee_role.name as assignee_role_name',
       ])
       .orderBy(sortExpression, sortDirection)
       .orderBy('fu.id', 'asc')
@@ -280,6 +294,12 @@ export class FollowUpsService {
         ),
         lead_name: leadName,
         lead_secondary: leadSecondary,
+        assignee: {
+          id: row.assignee_id,
+          fullName: row.assignee_full_name,
+          email: row.assignee_email,
+          roleName: row.assignee_role_name,
+        },
       });
     });
 

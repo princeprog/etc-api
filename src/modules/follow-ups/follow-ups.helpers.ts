@@ -31,7 +31,7 @@ const FOLLOW_UP_SORTS: FollowUpSort[] = SORT_KEYS.flatMap((key) => [
 ]);
 
 export const DEFAULT_PAGE = 1;
-export const DEFAULT_PAGE_SIZE = 20;
+export const DEFAULT_PAGE_SIZE = 10;
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_SORT: FollowUpSort = 'dueAt';
 
@@ -166,6 +166,12 @@ export function mapFollowUpResponse(followUp: {
   updated_at: Date;
   lead_name?: string | null;
   lead_secondary?: string | null;
+  assignee?: {
+    id: string;
+    fullName: string;
+    email: string;
+    roleName: string;
+  } | null;
 }) {
   return {
     id: followUp.id,
@@ -182,6 +188,7 @@ export function mapFollowUpResponse(followUp: {
     outcomeNote: followUp.outcome_note,
     leadName: followUp.lead_name ?? null,
     leadSecondary: followUp.lead_secondary ?? null,
+    assignee: followUp.assignee ?? null,
     createdAt: followUp.created_at,
     updatedAt: followUp.updated_at,
   };
