@@ -28,6 +28,7 @@ const ACTIVITY_ENTITY_TYPES = [
   'sale',
   'follow_up',
   'user',
+  'financing_application',
   'expense',
   'expense_category',
   'expense_recurring_rule',

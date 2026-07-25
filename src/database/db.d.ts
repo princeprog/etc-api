@@ -693,6 +693,135 @@ export interface FinanceExpenses {
   voided_at: Timestamp | null;
 }
 
+export interface FinanceFinancingApplicationRequirements {
+  application_id: string;
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  id: Generated<string>;
+  is_required: Generated<boolean>;
+  label: string;
+  review_note: string | null;
+  reviewed_at: Timestamp | null;
+  reviewed_by_user_id: string | null;
+  revision_reason: string | null;
+  sort_order: Generated<number>;
+  status: Generated<string>;
+  template_item_id: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface FinanceFinancingApplications {
+  application_number: string;
+  assigned_staff_user_id: string;
+  buyer_lead_id: string;
+  cancellation_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cancelled_by_user_id: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  decided_at: Timestamp | null;
+  decided_by_user_id: string | null;
+  decision_note: string | null;
+  down_payment: Numeric | null;
+  id: Generated<string>;
+  loan_release_reference: string | null;
+  loan_released_at: Timestamp | null;
+  loan_released_by_user_id: string | null;
+  partner_id: string;
+  released_loan_amount: Numeric | null;
+  representative_user_id: string;
+  requested_amount: Numeric | null;
+  status: Generated<string>;
+  template_id: string | null;
+  term_months: number | null;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+  vehicle_id: string;
+  vehicle_release_note: string | null;
+  vehicle_released_at: Timestamp | null;
+  vehicle_released_by_user_id: string | null;
+}
+
+export interface FinanceFinancingDocumentVersions {
+  created_at: Generated<Timestamp>;
+  file_public_id: string;
+  file_resource_type: Generated<string>;
+  file_size: number;
+  id: Generated<string>;
+  is_current: Generated<boolean>;
+  mime_type: string;
+  original_filename: string;
+  requirement_id: string;
+  uploaded_by_public_session_id: string | null;
+  uploaded_by_user_id: string | null;
+  version_number: number;
+}
+
+export interface FinanceFinancingPartnerRepresentatives {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  partner_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface FinanceFinancingPartners {
+  contact_number: string | null;
+  contact_person: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  email: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  name: string;
+  notes: string | null;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+}
+
+export interface FinanceFinancingRequirementTemplateItems {
+  created_at: Generated<Timestamp>;
+  description: string | null;
+  id: Generated<string>;
+  is_required: Generated<boolean>;
+  label: string;
+  sort_order: Generated<number>;
+  template_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface FinanceFinancingRequirementTemplates {
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  description: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_default: Generated<boolean>;
+  name: string;
+  partner_id: string;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+}
+
+export interface FinanceFinancingUploadLinks {
+  application_id: string;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  revoked_at: Timestamp | null;
+  token_hash: string;
+}
+
+export interface FinanceFinancingUploadVerificationAttempts {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  ip_address: string;
+  succeeded: Generated<boolean>;
+  upload_link_id: string;
+}
+
 export interface InventoryVehicleBrands {
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
@@ -840,7 +969,9 @@ export interface SalesSaleDrafts {
   created_by_user_id: string;
   draft_number: string;
   final_sale_amount: Numeric | null;
+  financing_application_id: string | null;
   id: Generated<string>;
+  payment_mode: Generated<string>;
   sale_date: Timestamp | null;
   updated_at: Generated<Timestamp>;
   vehicle_id: string;
@@ -854,8 +985,10 @@ export interface SalesSales {
   created_at: Generated<Timestamp>;
   created_by_user_id: string;
   final_sale_amount: Numeric;
+  financing_application_id: string | null;
   gross_profit_amount: Numeric | null;
   id: Generated<string>;
+  payment_mode: Generated<string>;
   sale_date: Timestamp;
   sale_number: string;
   updated_at: Generated<Timestamp>;
@@ -1026,6 +1159,15 @@ export interface DB {
   "finance.expense_categories": FinanceExpenseCategories;
   "finance.expense_recurring_rules": FinanceExpenseRecurringRules;
   "finance.expenses": FinanceExpenses;
+  "finance.financing_application_requirements": FinanceFinancingApplicationRequirements;
+  "finance.financing_applications": FinanceFinancingApplications;
+  "finance.financing_document_versions": FinanceFinancingDocumentVersions;
+  "finance.financing_partner_representatives": FinanceFinancingPartnerRepresentatives;
+  "finance.financing_partners": FinanceFinancingPartners;
+  "finance.financing_requirement_template_items": FinanceFinancingRequirementTemplateItems;
+  "finance.financing_requirement_templates": FinanceFinancingRequirementTemplates;
+  "finance.financing_upload_links": FinanceFinancingUploadLinks;
+  "finance.financing_upload_verification_attempts": FinanceFinancingUploadVerificationAttempts;
   "inventory.vehicle_brands": InventoryVehicleBrands;
   "inventory.vehicle_models": InventoryVehicleModels;
   "inventory.vehicle_photos": InventoryVehiclePhotos;

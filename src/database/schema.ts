@@ -60,6 +60,22 @@ export type NotificationType =
   | ExpenseNotificationType
   | FollowUpNotificationType
   | VehicleNotificationType;
+export type FinancingApplicationStatus =
+  | 'draft'
+  | 'collecting_requirements'
+  | 'under_review'
+  | 'needs_revision'
+  | 'approved'
+  | 'rejected'
+  | 'loan_released'
+  | 'vehicle_released'
+  | 'cancelled';
+export type FinancingRequirementStatus =
+  | 'pending'
+  | 'submitted'
+  | 'accepted'
+  | 'revision_requested';
+export type SalePaymentMode = 'cash' | 'financing';
 
 export interface SellerLeadInspectionItem {
   rating: InspectionItemRating;
@@ -85,6 +101,7 @@ export type ActivityEntityType =
   | 'sale'
   | 'follow_up'
   | 'user'
+  | 'financing_application'
   | 'expense'
   | 'expense_category'
   | 'expense_recurring_rule';
@@ -281,6 +298,8 @@ export interface SalesTable {
   gross_profit_amount: string | null;
   commission_method: string | null;
   commission_locked: Generated<boolean>;
+  payment_mode: Generated<SalePaymentMode>;
+  financing_application_id: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -297,6 +316,8 @@ export interface SaleDraftsTable {
   commission_override_amount: string | null;
   commission_override_reason: string | null;
   buyer_closing_note: string | null;
+  payment_mode: Generated<SalePaymentMode>;
+  financing_application_id: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -386,6 +407,135 @@ export interface ExpensesTable {
   updated_at: Generated<Date>;
 }
 
+export interface FinancingPartnersTable {
+  id: Generated<string>;
+  name: string;
+  contact_person: string | null;
+  contact_number: string | null;
+  email: string | null;
+  notes: string | null;
+  is_active: Generated<boolean>;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface FinancingPartnerRepresentativesTable {
+  id: Generated<string>;
+  partner_id: string;
+  user_id: string;
+  is_active: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface FinancingRequirementTemplatesTable {
+  id: Generated<string>;
+  partner_id: string;
+  name: string;
+  description: string | null;
+  is_default: Generated<boolean>;
+  is_active: Generated<boolean>;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface FinancingRequirementTemplateItemsTable {
+  id: Generated<string>;
+  template_id: string;
+  label: string;
+  description: string | null;
+  is_required: Generated<boolean>;
+  sort_order: Generated<number>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface FinancingApplicationsTable {
+  id: Generated<string>;
+  application_number: string;
+  buyer_lead_id: string;
+  vehicle_id: string;
+  assigned_staff_user_id: string;
+  partner_id: string;
+  representative_user_id: string;
+  template_id: string | null;
+  status: Generated<FinancingApplicationStatus>;
+  requested_amount: string | null;
+  down_payment: string | null;
+  term_months: number | null;
+  decision_note: string | null;
+  decided_by_user_id: string | null;
+  decided_at: Date | null;
+  released_loan_amount: string | null;
+  loan_released_at: Date | null;
+  loan_release_reference: string | null;
+  loan_released_by_user_id: string | null;
+  vehicle_released_at: Date | null;
+  vehicle_release_note: string | null;
+  vehicle_released_by_user_id: string | null;
+  cancelled_at: Date | null;
+  cancelled_by_user_id: string | null;
+  cancellation_reason: string | null;
+  created_by_user_id: string;
+  updated_by_user_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface FinancingApplicationRequirementsTable {
+  id: Generated<string>;
+  application_id: string;
+  template_item_id: string | null;
+  label: string;
+  description: string | null;
+  is_required: Generated<boolean>;
+  sort_order: Generated<number>;
+  status: Generated<FinancingRequirementStatus>;
+  revision_reason: string | null;
+  review_note: string | null;
+  reviewed_by_user_id: string | null;
+  reviewed_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface FinancingDocumentVersionsTable {
+  id: Generated<string>;
+  requirement_id: string;
+  version_number: number;
+  file_public_id: string;
+  file_resource_type: string;
+  original_filename: string;
+  mime_type: string;
+  file_size: number;
+  is_current: Generated<boolean>;
+  uploaded_by_user_id: string | null;
+  uploaded_by_public_session_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface FinancingUploadLinksTable {
+  id: Generated<string>;
+  application_id: string;
+  token_hash: string;
+  expires_at: Date;
+  revoked_at: Date | null;
+  created_by_user_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface FinancingUploadVerificationAttemptsTable {
+  id: Generated<string>;
+  upload_link_id: string;
+  ip_address: string;
+  succeeded: Generated<boolean>;
+  created_at: Generated<Date>;
+}
+
 export interface NotificationsTable {
   id: Generated<string>;
   recipient_user_id: string;
@@ -424,6 +574,15 @@ export interface DB {
   'finance.expense_categories': ExpenseCategoriesTable;
   'finance.expense_recurring_rules': ExpenseRecurringRulesTable;
   'finance.expenses': ExpensesTable;
+  'finance.financing_partners': FinancingPartnersTable;
+  'finance.financing_partner_representatives': FinancingPartnerRepresentativesTable;
+  'finance.financing_requirement_templates': FinancingRequirementTemplatesTable;
+  'finance.financing_requirement_template_items': FinancingRequirementTemplateItemsTable;
+  'finance.financing_applications': FinancingApplicationsTable;
+  'finance.financing_application_requirements': FinancingApplicationRequirementsTable;
+  'finance.financing_document_versions': FinancingDocumentVersionsTable;
+  'finance.financing_upload_links': FinancingUploadLinksTable;
+  'finance.financing_upload_verification_attempts': FinancingUploadVerificationAttemptsTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -469,3 +628,10 @@ export type ExpenseUpdate = Updateable<ExpensesTable>;
 export type Notification = Selectable<NotificationsTable>;
 export type NewNotification = Insertable<NotificationsTable>;
 export type NotificationUpdate = Updateable<NotificationsTable>;
+
+export type FinancingPartner = Selectable<FinancingPartnersTable>;
+export type NewFinancingPartner = Insertable<FinancingPartnersTable>;
+export type FinancingPartnerUpdate = Updateable<FinancingPartnersTable>;
+export type FinancingApplication = Selectable<FinancingApplicationsTable>;
+export type NewFinancingApplication = Insertable<FinancingApplicationsTable>;
+export type FinancingApplicationUpdate = Updateable<FinancingApplicationsTable>;

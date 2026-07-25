@@ -37,6 +37,15 @@ export const PERMISSIONS = {
   activityHistoryView: 'activity_history.view',
   usersManage: 'users.manage',
   rolesManage: 'roles.manage',
+  financingView: 'financing.view',
+  financingCreate: 'financing.create',
+  financingUpdate: 'financing.update',
+  financingReview: 'financing.review',
+  financingDecide: 'financing.decide',
+  financingRecordLoanRelease: 'financing.record_loan_release',
+  financingRecordVehicleRelease: 'financing.record_vehicle_release',
+  financingManagePartners: 'financing.manage_partners',
+  financingManageTemplates: 'financing.manage_templates',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
