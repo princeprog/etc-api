@@ -174,6 +174,10 @@ export class FinancingService {
     }
 
     const templates = await query.orderBy('created_at', 'desc').execute();
+    if (!templates.length) {
+      return { templates: [] };
+    }
+
     const items = await this.db
       .selectFrom('finance.financing_requirement_template_items')
       .selectAll()
@@ -1033,6 +1037,10 @@ export class FinancingService {
       .where('application_id', '=', applicationId)
       .orderBy('sort_order')
       .execute();
+    if (!requirements.length) {
+      return [];
+    }
+
     const documents = await this.db
       .selectFrom('finance.financing_document_versions')
       .selectAll()
