@@ -52,6 +52,8 @@ type FinalizeSaleInput = {
   commissionOverrideAmount?: string | null;
   commissionOverrideReason?: string | null;
   buyerClosingNote?: string | null;
+  paymentMode?: 'cash' | 'financing' | null;
+  financingApplicationId?: string | null;
 };
 
 @Injectable()
@@ -139,6 +141,14 @@ export class SalesService {
         dto.buyerClosingNote !== undefined
           ? dto.buyerClosingNote
           : existingDraft.buyer_closing_note,
+      paymentMode:
+        dto.paymentMode !== undefined
+          ? dto.paymentMode
+          : (existingDraft.payment_mode as 'cash' | 'financing'),
+      financingApplicationId:
+        dto.financingApplicationId !== undefined
+          ? dto.financingApplicationId
+          : existingDraft.financing_application_id,
     });
 
     const updatedDraft = await this.db.transaction().execute(async (trx) => {
@@ -193,6 +203,8 @@ export class SalesService {
         commissionOverrideAmount: draft.commission_override_amount,
         commissionOverrideReason: draft.commission_override_reason,
         buyerClosingNote: draft.buyer_closing_note,
+        paymentMode: draft.payment_mode as 'cash' | 'financing',
+        financingApplicationId: draft.financing_application_id,
       },
       id,
     );
@@ -315,10 +327,23 @@ export class SalesService {
     );
     const agentName = normalizeOptionalTrimmed(input.agentName);
     const buyerClosingNote = normalizeOptionalTrimmed(input.buyerClosingNote);
+    const paymentMode = this.normalizePaymentMode(input.paymentMode);
+    const financingApplicationId = normalizeOptionalTrimmed(
+      input.financingApplicationId,
+    );
 
     const result = await this.db.transaction().execute(async (trx) => {
       const vehicle = await this.getVehicleOrThrow(vehicleId, trx);
       const buyerLead = await this.getBuyerLeadOrThrow(buyerLeadId, trx);
+      await this.ensureFinancingReadyForSale(
+        {
+          paymentMode,
+          financingApplicationId,
+          buyerLeadId,
+          vehicleId,
+        },
+        trx,
+      );
 
       if (vehicle.status === 'Sold') {
         throw new BadRequestException('Vehicle is already sold');
@@ -379,6 +404,8 @@ export class SalesService {
           gross_profit_amount: grossProfitAmount,
           commission_method: agentName ? 'fixed' : null,
           commission_locked: true,
+          payment_mode: paymentMode,
+          financing_application_id: financingApplicationId,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -479,6 +506,9 @@ export class SalesService {
     });
 
     const vehicle = (await this.vehiclesService.findOne(vehicleId)).vehicle;
+    const financing = await this.getFinancingSaleSummary(
+      result.sale.financing_application_id,
+    );
 
     return {
       sale: {
@@ -488,6 +518,7 @@ export class SalesService {
           mapSaleResponse(result.sale),
           vehicle.trackedCostsTotal,
         ),
+        financing,
       },
       commission: mapCommissionResponse(result.commission),
       vehicle,
@@ -532,6 +563,9 @@ export class SalesService {
 
     const vehicle = (await this.vehiclesService.findOne(sale.vehicle_id))
       .vehicle;
+    const financing = await this.getFinancingSaleSummary(
+      sale.financing_application_id,
+    );
 
     return {
       recordType: 'sale' as const,
@@ -540,6 +574,7 @@ export class SalesService {
         mapSaleResponse(sale),
         vehicle.trackedCostsTotal,
       ),
+      financing,
       buyerLead: {
         id: buyerLead.id,
         buyerName: buyerLead.buyer_name,
@@ -597,6 +632,12 @@ export class SalesService {
       buyerLeads.map((buyerLead) => [buyerLead.id, buyerLead]),
     );
     const salesById = new Map(sales.map((sale) => [sale.id, sale]));
+    const financingByApplicationId =
+      await this.getFinancingSaleSummaries(
+        sales
+          .map((sale) => sale.financing_application_id)
+          .filter((id): id is string => Boolean(id)),
+      );
 
     return ids.map((id) => {
       const sale = salesById.get(id);
@@ -632,6 +673,10 @@ export class SalesService {
           mapSaleResponse(sale),
           vehicle.trackedCostsTotal,
         ),
+        financing: sale.financing_application_id
+          ? (financingByApplicationId.get(sale.financing_application_id) ??
+            null)
+          : null,
         buyerLead: {
           id: buyerLead.id,
           buyerName: buyerLead.buyer_name,
@@ -742,6 +787,16 @@ export class SalesService {
         commissionOverrideAmount: draft.commission_override_amount,
         commissionOverrideReason: draft.commission_override_reason,
         buyerClosingNote: draft.buyer_closing_note,
+        paymentMode: draft.payment_mode,
+        financingApplicationId: draft.financing_application_id,
+        financing: draft.financing_application_id
+          ? {
+              applicationId: draft.financing_application_id,
+              applicationNumber: null,
+              partnerId: null,
+              partnerName: null,
+            }
+          : null,
         createdAt: draft.created_at,
         updatedAt: draft.updated_at,
         buyerLead: {
@@ -820,6 +875,10 @@ export class SalesService {
         dto.commissionOverrideReason,
       ),
       buyerClosingNote: normalizeOptionalTrimmed(dto.buyerClosingNote),
+      paymentMode: this.normalizePaymentMode(dto.paymentMode),
+      financingApplicationId: normalizeOptionalTrimmed(
+        dto.financingApplicationId,
+      ),
     };
   }
 
@@ -830,6 +889,8 @@ export class SalesService {
     commissionOverrideAmount: string | null;
     commissionOverrideReason: string | null;
     buyerClosingNote: string | null;
+    paymentMode: 'cash' | 'financing';
+    financingApplicationId: string | null;
   }) {
     return {
       agent_name: values.agentName,
@@ -838,7 +899,115 @@ export class SalesService {
       commission_override_amount: values.commissionOverrideAmount,
       commission_override_reason: values.commissionOverrideReason,
       buyer_closing_note: values.buyerClosingNote,
+      payment_mode: values.paymentMode,
+      financing_application_id: values.financingApplicationId,
     };
+  }
+
+  private async getFinancingSaleSummary(financingApplicationId: string | null) {
+    if (!financingApplicationId) {
+      return null;
+    }
+
+    const summaries = await this.getFinancingSaleSummaries([
+      financingApplicationId,
+    ]);
+
+    return summaries.get(financingApplicationId) ?? null;
+  }
+
+  private async getFinancingSaleSummaries(financingApplicationIds: string[]) {
+    if (financingApplicationIds.length === 0) {
+      return new Map<
+        string,
+        {
+          applicationId: string;
+          applicationNumber: string;
+          partnerId: string;
+          partnerName: string;
+        }
+      >();
+    }
+
+    const rows = await this.db
+      .selectFrom('finance.financing_applications as app')
+      .innerJoin(
+        'finance.financing_partners as partner',
+        'partner.id',
+        'app.partner_id',
+      )
+      .select([
+        'app.id as applicationId',
+        'app.application_number as applicationNumber',
+        'partner.id as partnerId',
+        'partner.name as partnerName',
+      ])
+      .where('app.id', 'in', Array.from(new Set(financingApplicationIds)))
+      .execute();
+
+    return new Map(rows.map((row) => [row.applicationId, row]));
+  }
+
+  private normalizePaymentMode(
+    value: 'cash' | 'financing' | null | undefined,
+  ): 'cash' | 'financing' {
+    return value === 'financing' ? 'financing' : 'cash';
+  }
+
+  private async ensureFinancingReadyForSale(
+    input: {
+      paymentMode: 'cash' | 'financing';
+      financingApplicationId: string | null;
+      buyerLeadId: string;
+      vehicleId: string;
+    },
+    trx: Transaction<DB>,
+  ) {
+    if (input.paymentMode === 'cash') {
+      if (input.financingApplicationId) {
+        throw new BadRequestException(
+          'Cash sales cannot reference a financing application',
+        );
+      }
+
+      return;
+    }
+
+    if (!input.financingApplicationId) {
+      throw new BadRequestException(
+        'A financing application is required for financed sales',
+      );
+    }
+
+    const application = await trx
+      .selectFrom('finance.financing_applications')
+      .select([
+        'id',
+        'buyer_lead_id',
+        'vehicle_id',
+        'status',
+      ])
+      .where('id', '=', input.financingApplicationId)
+      .executeTakeFirst();
+
+    if (!application) {
+      throw new BadRequestException('Financing application was not found');
+    }
+
+    if (
+      application.buyer_lead_id !== input.buyerLeadId ||
+      application.vehicle_id !== input.vehicleId
+    ) {
+      throw new BadRequestException(
+        'Financing application must match the selected buyer and vehicle',
+      );
+    }
+
+    if (application.status !== 'loan_released') {
+      throw new BadRequestException(
+        'Financing application must have a released loan before sale finalization',
+      );
+    }
   }
 
   private async ensureDraftBuyerVehicleLink(

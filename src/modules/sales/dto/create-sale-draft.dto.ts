@@ -7,4 +7,6 @@ export class CreateSaleDraftDto {
   commissionOverrideAmount?: string | null;
   commissionOverrideReason?: string | null;
   buyerClosingNote?: string | null;
+  paymentMode?: 'cash' | 'financing' | null;
+  financingApplicationId?: string | null;
 }

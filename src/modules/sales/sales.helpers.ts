@@ -94,6 +94,8 @@ export function mapSaleResponse(sale: {
   gross_profit_amount: string | null;
   commission_method: string | null;
   commission_locked: boolean;
+  payment_mode: string;
+  financing_application_id: string | null;
   created_at: Date;
   updated_at: Date;
 }) {
@@ -109,6 +111,8 @@ export function mapSaleResponse(sale: {
     grossProfitAmount: sale.gross_profit_amount,
     commissionMethod: sale.commission_method,
     commissionLocked: sale.commission_locked,
+    paymentMode: sale.payment_mode,
+    financingApplicationId: sale.financing_application_id,
     createdAt: sale.created_at,
     updatedAt: sale.updated_at,
   };
