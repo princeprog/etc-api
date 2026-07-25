@@ -19,6 +19,7 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { InspectionChecklistsModule } from './modules/inspection-checklists/inspection-checklists.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { FinancingModule } from './modules/financing/financing.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { RolesModule } from './modules/roles/roles.module';
     NotificationsModule,
     InspectionChecklistsModule,
     RolesModule,
+    FinancingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

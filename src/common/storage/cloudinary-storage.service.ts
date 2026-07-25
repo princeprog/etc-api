@@ -50,6 +50,44 @@ export class CloudinaryStorageService implements FileStorage, OnModuleInit {
     };
   }
 
+  async savePrivateUserFile(input: FileStorageSaveInput): Promise<StoredFile> {
+    this.configure();
+
+    const uploadResult = await this.uploadBuffer(input, {
+      type: 'authenticated',
+      access_mode: 'authenticated',
+    });
+
+    return {
+      filename: this.getFilename(uploadResult),
+      mimeType: input.mimeType,
+      size: uploadResult.bytes,
+      relativePath: uploadResult.public_id,
+      publicId: uploadResult.public_id,
+      width: uploadResult.width,
+      height: uploadResult.height,
+      format: uploadResult.format,
+    };
+  }
+
+  createSignedUrl(
+    publicId: string,
+    input: {
+      resourceType: 'image' | 'raw';
+      expiresInSeconds: number;
+    },
+  ) {
+    this.configure();
+
+    return cloudinary.url(publicId, {
+      secure: true,
+      sign_url: true,
+      type: 'authenticated',
+      resource_type: input.resourceType,
+      expires_at: Math.floor(Date.now() / 1000) + input.expiresInSeconds,
+    });
+  }
+
   async deleteFiles(relativePathsOrUrls: string[]) {
     this.configure();
 
@@ -69,11 +107,15 @@ export class CloudinaryStorageService implements FileStorage, OnModuleInit {
     );
   }
 
-  private uploadBuffer(input: FileStorageSaveInput) {
+  private uploadBuffer(
+    input: FileStorageSaveInput,
+    options: Record<string, unknown> = {},
+  ) {
     return new Promise<UploadApiResponse>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           resource_type: input.resourceType ?? 'image',
+          ...options,
           folder:
             input.folder ?? `etc-cars/users/${input.userId}/vehicle-photos`,
           use_filename: false,
