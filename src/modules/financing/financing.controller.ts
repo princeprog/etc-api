@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -22,6 +23,7 @@ import type { CurrentUser as CurrentUserType } from '../../common/types/auth.typ
 import {
   CancelFinancingApplicationDto,
   CreateFinancingApplicationDto,
+  CreateFinancingRequirementDto,
   CreateFinancingPartnerDto,
   CreateRequirementTemplateDto,
   DecideFinancingApplicationDto,
@@ -31,6 +33,7 @@ import {
   ReviewFinancingRequirementDto,
   UpdateFinancingApplicationDto,
   UpdateFinancingPartnerDto,
+  UpdateFinancingRequirementDto,
   UpdateRequirementTemplateDto,
   UpsertPartnerRepresentativeDto,
 } from './dto/financing.dto';
@@ -106,6 +109,37 @@ export class FinancingController {
     @Body() dto: UpdateRequirementTemplateDto,
   ) {
     return this.financingService.updateTemplate(user, id, dto);
+  }
+
+  @Get('requirements')
+  @RequirePermissions(PERMISSIONS.financingManageTemplates)
+  listRequirements() {
+    return this.financingService.listRequirements();
+  }
+
+  @Post('requirements')
+  @RequirePermissions(PERMISSIONS.financingManageTemplates)
+  createRequirement(
+    @CurrentUser() user: CurrentUserType,
+    @Body() dto: CreateFinancingRequirementDto,
+  ) {
+    return this.financingService.createRequirement(user, dto);
+  }
+
+  @Patch('requirements/:id')
+  @RequirePermissions(PERMISSIONS.financingManageTemplates)
+  updateRequirement(
+    @CurrentUser() user: CurrentUserType,
+    @Param('id') id: string,
+    @Body() dto: UpdateFinancingRequirementDto,
+  ) {
+    return this.financingService.updateRequirement(user, id, dto);
+  }
+
+  @Delete('requirements/:id')
+  @RequirePermissions(PERMISSIONS.financingManageTemplates)
+  deleteRequirement(@Param('id') id: string) {
+    return this.financingService.deleteRequirement(id);
   }
 
   @Get('applications')

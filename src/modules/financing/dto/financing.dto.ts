@@ -56,10 +56,20 @@ export class RequirementTemplateItemDto {
   sortOrder?: number;
 }
 
+export class CreateFinancingRequirementDto {
+  label!: string;
+  description?: string | null;
+}
+
+export class UpdateFinancingRequirementDto {
+  label?: string;
+  description?: string | null;
+}
+
 export class CreateFinancingApplicationDto {
   buyerLeadId!: string;
   vehicleId!: string;
-  partnerId!: string;
+  partnerId?: string;
   representativeUserId!: string;
   assignedStaffUserId?: string | null;
   templateId?: string | null;
