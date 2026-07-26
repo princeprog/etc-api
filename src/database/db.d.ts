@@ -727,7 +727,7 @@ export interface FinanceFinancingApplications {
   loan_release_reference: string | null;
   loan_released_at: Timestamp | null;
   loan_released_by_user_id: string | null;
-  partner_id: string;
+  partner_id: string | null;
   released_loan_amount: Numeric | null;
   representative_user_id: string;
   requested_amount: Numeric | null;
@@ -776,6 +776,19 @@ export interface FinanceFinancingPartners {
   is_active: Generated<boolean>;
   name: string;
   notes: string | null;
+  updated_at: Generated<Timestamp>;
+  updated_by_user_id: string | null;
+}
+
+export interface FinanceFinancingRequirements {
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  description: string | null;
+  id: Generated<string>;
+  is_active: Generated<boolean>;
+  is_required: Generated<boolean>;
+  label: string;
+  sort_order: Generated<number>;
   updated_at: Generated<Timestamp>;
   updated_by_user_id: string | null;
 }
@@ -1166,6 +1179,7 @@ export interface DB {
   "finance.financing_partners": FinanceFinancingPartners;
   "finance.financing_requirement_template_items": FinanceFinancingRequirementTemplateItems;
   "finance.financing_requirement_templates": FinanceFinancingRequirementTemplates;
+  "finance.financing_requirements": FinanceFinancingRequirements;
   "finance.financing_upload_links": FinanceFinancingUploadLinks;
   "finance.financing_upload_verification_attempts": FinanceFinancingUploadVerificationAttempts;
   "inventory.vehicle_brands": InventoryVehicleBrands;

@@ -24,18 +24,13 @@ import {
   CancelFinancingApplicationDto,
   CreateFinancingApplicationDto,
   CreateFinancingRequirementDto,
-  CreateFinancingPartnerDto,
-  CreateRequirementTemplateDto,
   DecideFinancingApplicationDto,
   ListFinancingApplicationsQueryDto,
   RecordLoanReleaseDto,
   RecordVehicleReleaseDto,
   ReviewFinancingRequirementDto,
   UpdateFinancingApplicationDto,
-  UpdateFinancingPartnerDto,
   UpdateFinancingRequirementDto,
-  UpdateRequirementTemplateDto,
-  UpsertPartnerRepresentativeDto,
 } from './dto/financing.dto';
 import { FINANCING_MAX_DOCUMENT_SIZE_BYTES } from './financing.helpers';
 import { FinancingService } from './financing.service';
@@ -51,65 +46,6 @@ type UploadedFile = {
 @Controller('financing')
 export class FinancingController {
   constructor(private readonly financingService: FinancingService) {}
-
-  @Get('partners')
-  @RequirePermissions(PERMISSIONS.financingManagePartners)
-  listPartners() {
-    return this.financingService.listPartners();
-  }
-
-  @Post('partners')
-  @RequirePermissions(PERMISSIONS.financingManagePartners)
-  createPartner(
-    @CurrentUser() user: CurrentUserType,
-    @Body() dto: CreateFinancingPartnerDto,
-  ) {
-    return this.financingService.createPartner(user, dto);
-  }
-
-  @Patch('partners/:id')
-  @RequirePermissions(PERMISSIONS.financingManagePartners)
-  updatePartner(
-    @CurrentUser() user: CurrentUserType,
-    @Param('id') id: string,
-    @Body() dto: UpdateFinancingPartnerDto,
-  ) {
-    return this.financingService.updatePartner(user, id, dto);
-  }
-
-  @Post('partners/:id/representatives')
-  @RequirePermissions(PERMISSIONS.financingManagePartners)
-  upsertRepresentative(
-    @Param('id') id: string,
-    @Body() dto: UpsertPartnerRepresentativeDto,
-  ) {
-    return this.financingService.upsertRepresentative(id, dto);
-  }
-
-  @Get('templates')
-  @RequirePermissions(PERMISSIONS.financingManageTemplates)
-  listTemplates(@Query('partnerId') partnerId?: string) {
-    return this.financingService.listTemplates(partnerId);
-  }
-
-  @Post('templates')
-  @RequirePermissions(PERMISSIONS.financingManageTemplates)
-  createTemplate(
-    @CurrentUser() user: CurrentUserType,
-    @Body() dto: CreateRequirementTemplateDto,
-  ) {
-    return this.financingService.createTemplate(user, dto);
-  }
-
-  @Patch('templates/:id')
-  @RequirePermissions(PERMISSIONS.financingManageTemplates)
-  updateTemplate(
-    @CurrentUser() user: CurrentUserType,
-    @Param('id') id: string,
-    @Body() dto: UpdateRequirementTemplateDto,
-  ) {
-    return this.financingService.updateTemplate(user, id, dto);
-  }
 
   @Get('requirements')
   @RequirePermissions(PERMISSIONS.financingManageTemplates)

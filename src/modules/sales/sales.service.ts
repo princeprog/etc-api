@@ -931,21 +931,23 @@ export class SalesService {
 
     const rows = await this.db
       .selectFrom('finance.financing_applications as app')
-      .innerJoin(
-        'finance.financing_partners as partner',
-        'partner.id',
-        'app.partner_id',
-      )
       .select([
         'app.id as applicationId',
         'app.application_number as applicationNumber',
-        'partner.id as partnerId',
-        'partner.name as partnerName',
       ])
       .where('app.id', 'in', Array.from(new Set(financingApplicationIds)))
       .execute();
 
-    return new Map(rows.map((row) => [row.applicationId, row]));
+    return new Map(
+      rows.map((row) => [
+        row.applicationId,
+        {
+          ...row,
+          partnerId: '',
+          partnerName: 'Financing',
+        },
+      ]),
+    );
   }
 
   private normalizePaymentMode(

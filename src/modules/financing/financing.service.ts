@@ -26,18 +26,13 @@ import type {
   CancelFinancingApplicationDto,
   CreateFinancingApplicationDto,
   CreateFinancingRequirementDto,
-  CreateFinancingPartnerDto,
-  CreateRequirementTemplateDto,
   DecideFinancingApplicationDto,
   ListFinancingApplicationsQueryDto,
   RecordLoanReleaseDto,
   RecordVehicleReleaseDto,
   ReviewFinancingRequirementDto,
   UpdateFinancingApplicationDto,
-  UpdateFinancingPartnerDto,
   UpdateFinancingRequirementDto,
-  UpdateRequirementTemplateDto,
-  UpsertPartnerRepresentativeDto,
 } from './dto/financing.dto';
 import {
   addDays,
@@ -72,7 +67,6 @@ const applicationSummarySelects = [
   'app.buyer_lead_id as buyer_lead_id',
   'app.vehicle_id as vehicle_id',
   'app.assigned_staff_user_id as assigned_staff_user_id',
-  'app.partner_id as partner_id',
   'app.representative_user_id as representative_user_id',
   'app.status as status',
   'app.requested_amount as requested_amount',
@@ -94,7 +88,6 @@ const applicationSummarySelects = [
   'vehicle.brand as vehicle_brand',
   'vehicle.model as vehicle_model',
   'vehicle.variant as vehicle_variant',
-  'partner.name as partner_name',
   'rep.full_name as representative_full_name',
   'staff.full_name as assigned_staff_full_name',
 ] as const;
@@ -107,271 +100,31 @@ export class FinancingService {
     private readonly cloudinaryStorageService: CloudinaryStorageService,
   ) {}
 
-  async listPartners() {
-    const partners = await this.db
-      .selectFrom('finance.financing_partners')
-      .selectAll()
-      .orderBy('name')
-      .execute();
+  async listRequirements() {
+    const requirements = await this.listActiveFinancingRequirements();
 
-    if (!partners.length) {
-      return { partners: [] };
-    }
-
-    const representatives = await this.db
-      .selectFrom('finance.financing_partner_representatives as representative')
-      .innerJoin('authentication.users as user', 'user.id', 'representative.user_id')
-      .leftJoin('authentication.roles as role', 'role.id', 'user.role_id')
-      .select([
-        'representative.id as id',
-        'representative.partner_id as partnerId',
-        'representative.user_id as userId',
-        'representative.is_active as isActive',
-        'representative.created_at as createdAt',
-        'representative.updated_at as updatedAt',
-        'user.full_name as fullName',
-        'user.email as email',
-        'role.name as roleName',
-      ])
-      .where(
-        'representative.partner_id',
-        'in',
-        partners.map((partner) => partner.id),
-      )
-      .orderBy('user.full_name')
-      .execute();
-    const representativesByPartner = groupBy(
-      representatives,
-      (representative) => representative.partnerId,
-    );
-
-    return {
-      partners: partners.map((partner) =>
-        mapPartner(
-          partner,
-          representativesByPartner.get(partner.id)?.map(mapRepresentativeDetail) ?? [],
-        ),
-      ),
-    };
+    return { requirements: requirements.map(mapRequirementSetting) };
   }
 
-  async createPartner(user: CurrentUser, dto: CreateFinancingPartnerDto) {
-    const partner = await this.db
-      .insertInto('finance.financing_partners')
+  async createRequirement(user: CurrentUser, dto: CreateFinancingRequirementDto) {
+    const maxSortOrder = await this.db
+      .selectFrom('finance.financing_requirements')
+      .select((eb) => eb.fn.max<number>('sort_order').as('sortOrder'))
+      .where('is_active', '=', true)
+      .executeTakeFirst();
+
+    const requirement = await this.db
+      .insertInto('finance.financing_requirements')
       .values({
-        name: requireTrimmed(dto.name, 'name'),
-        contact_person: normalizeOptionalTrimmed(dto.contactPerson),
-        contact_number: normalizeOptionalTrimmed(dto.contactNumber),
-        email: normalizeOptionalTrimmed(dto.email),
-        notes: normalizeOptionalTrimmed(dto.notes),
+        label: requireTrimmed(dto.label, 'label'),
+        description: normalizeOptionalTrimmed(dto.description),
+        is_required: true,
+        sort_order: (maxSortOrder?.sortOrder ?? -1) + 1,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
-
-    return { partner: mapPartner(partner) };
-  }
-
-  async updatePartner(
-    user: CurrentUser,
-    id: string,
-    dto: UpdateFinancingPartnerDto,
-  ) {
-    const partner = await this.db
-      .updateTable('finance.financing_partners')
-      .set({
-        ...(dto.name !== undefined
-          ? { name: requireTrimmed(dto.name, 'name') }
-          : {}),
-        ...(dto.contactPerson !== undefined
-          ? { contact_person: normalizeOptionalTrimmed(dto.contactPerson) }
-          : {}),
-        ...(dto.contactNumber !== undefined
-          ? { contact_number: normalizeOptionalTrimmed(dto.contactNumber) }
-          : {}),
-        ...(dto.email !== undefined
-          ? { email: normalizeOptionalTrimmed(dto.email) }
-          : {}),
-        ...(dto.notes !== undefined
-          ? { notes: normalizeOptionalTrimmed(dto.notes) }
-          : {}),
-        ...(dto.isActive !== undefined ? { is_active: dto.isActive } : {}),
-        updated_by_user_id: user.id,
-        updated_at: new Date(),
-      })
-      .where('id', '=', id)
-      .returningAll()
-      .executeTakeFirst();
-
-    if (!partner) {
-      throw new NotFoundException('Financing partner was not found');
-    }
-
-    return { partner: mapPartner(partner) };
-  }
-
-  async upsertRepresentative(
-    partnerId: string,
-    dto: UpsertPartnerRepresentativeDto,
-  ) {
-    await this.ensurePartnerExists(partnerId);
-    await this.ensureActiveUser(dto.userId);
-
-    const representative = await this.db
-      .insertInto('finance.financing_partner_representatives')
-      .values({
-        partner_id: partnerId,
-        user_id: requireTrimmed(dto.userId, 'userId'),
-        is_active: dto.isActive ?? true,
-      })
-      .onConflict((oc) =>
-        oc.columns(['partner_id', 'user_id']).doUpdateSet({
-          is_active: dto.isActive ?? true,
-          updated_at: new Date(),
-        }),
-      )
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    return { representative: mapRepresentative(representative) };
-  }
-
-  async listTemplates(partnerId?: string) {
-    let query = this.db
-      .selectFrom('finance.financing_requirement_templates')
-      .selectAll();
-
-    if (partnerId) {
-      query = query.where('partner_id', '=', partnerId);
-    }
-
-    const templates = await query.orderBy('created_at', 'desc').execute();
-    if (!templates.length) {
-      return { templates: [] };
-    }
-
-    const items = await this.db
-      .selectFrom('finance.financing_requirement_template_items')
-      .selectAll()
-      .where(
-        'template_id',
-        'in',
-        templates.map((template) => template.id),
-      )
-      .orderBy('sort_order')
-      .execute();
-    const itemsByTemplate = groupBy(items, (item) => item.template_id);
-
-    return {
-      templates: templates.map((template) =>
-        mapTemplate(template, itemsByTemplate.get(template.id) ?? []),
-      ),
-    };
-  }
-
-  async createTemplate(user: CurrentUser, dto: CreateRequirementTemplateDto) {
-    await this.ensurePartnerExists(dto.partnerId);
-
-    const template = await this.db.transaction().execute(async (trx) => {
-      if (dto.isDefault) {
-        await this.clearDefaultTemplate(dto.partnerId, trx);
-      }
-
-      const inserted = await trx
-        .insertInto('finance.financing_requirement_templates')
-        .values({
-          partner_id: requireTrimmed(dto.partnerId, 'partnerId'),
-          name: requireTrimmed(dto.name, 'name'),
-          description: normalizeOptionalTrimmed(dto.description),
-          is_default: dto.isDefault ?? false,
-          created_by_user_id: user.id,
-          updated_by_user_id: user.id,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      await this.replaceTemplateItems(inserted.id, dto.items ?? [], trx);
-      return inserted;
-    });
-
-    return { template: await this.getTemplateResponse(template.id) };
-  }
-
-  async updateTemplate(
-    user: CurrentUser,
-    id: string,
-    dto: UpdateRequirementTemplateDto,
-  ) {
-    const existing = await this.getTemplateOrThrow(id);
-
-    await this.db.transaction().execute(async (trx) => {
-      if (dto.isDefault) {
-        await this.clearDefaultTemplate(existing.partner_id, trx);
-      }
-
-      const updated = await trx
-        .updateTable('finance.financing_requirement_templates')
-        .set({
-          ...(dto.name !== undefined
-            ? { name: requireTrimmed(dto.name, 'name') }
-            : {}),
-          ...(dto.description !== undefined
-            ? { description: normalizeOptionalTrimmed(dto.description) }
-            : {}),
-          ...(dto.isDefault !== undefined ? { is_default: dto.isDefault } : {}),
-          ...(dto.isActive !== undefined ? { is_active: dto.isActive } : {}),
-          updated_by_user_id: user.id,
-          updated_at: new Date(),
-        })
-        .where('id', '=', id)
-        .returningAll()
-        .executeTakeFirst();
-
-      if (!updated) {
-        throw new NotFoundException('Requirement template was not found');
-      }
-
-      if (dto.items) {
-        await this.replaceTemplateItems(id, dto.items, trx);
-      }
-    });
-
-    return { template: await this.getTemplateResponse(id) };
-  }
-
-  async listRequirements() {
-    const template = await this.ensureDefaultRequirementTemplate();
-    const items = await this.listTemplateItems(template.id);
-
-    return { requirements: items.map(mapRequirementSetting) };
-  }
-
-  async createRequirement(user: CurrentUser, dto: CreateFinancingRequirementDto) {
-    const template = await this.ensureDefaultRequirementTemplate(user.id);
-    const maxSortOrder = await this.db
-      .selectFrom('finance.financing_requirement_template_items')
-      .select((eb) => eb.fn.max<number>('sort_order').as('sortOrder'))
-      .where('template_id', '=', template.id)
-      .executeTakeFirst();
-
-    const requirement = await this.db
-      .insertInto('finance.financing_requirement_template_items')
-      .values({
-        template_id: template.id,
-        label: requireTrimmed(dto.label, 'label'),
-        description: normalizeOptionalTrimmed(dto.description),
-        is_required: true,
-        sort_order: (maxSortOrder?.sortOrder ?? -1) + 1,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    await this.db
-      .updateTable('finance.financing_requirement_templates')
-      .set({ updated_by_user_id: user.id, updated_at: new Date() })
-      .where('id', '=', template.id)
-      .execute();
 
     return { requirement: mapRequirementSetting(requirement) };
   }
@@ -382,7 +135,7 @@ export class FinancingService {
     dto: UpdateFinancingRequirementDto,
   ) {
     const requirement = await this.db
-      .updateTable('finance.financing_requirement_template_items')
+      .updateTable('finance.financing_requirements')
       .set({
         ...(dto.label !== undefined
           ? { label: requireTrimmed(dto.label, 'label') }
@@ -390,9 +143,11 @@ export class FinancingService {
         ...(dto.description !== undefined
           ? { description: normalizeOptionalTrimmed(dto.description) }
           : {}),
+        updated_by_user_id: user.id,
         updated_at: new Date(),
       })
       .where('id', '=', id)
+      .where('is_active', '=', true)
       .returningAll()
       .executeTakeFirst();
 
@@ -400,20 +155,15 @@ export class FinancingService {
       throw new NotFoundException('Financing requirement was not found');
     }
 
-    await this.db
-      .updateTable('finance.financing_requirement_templates')
-      .set({ updated_by_user_id: user.id, updated_at: new Date() })
-      .where('id', '=', requirement.template_id)
-      .execute();
-
     return { requirement: mapRequirementSetting(requirement) };
   }
 
   async deleteRequirement(id: string) {
     const existing = await this.db
-      .selectFrom('finance.financing_requirement_template_items')
-      .select(['id', 'template_id'])
+      .selectFrom('finance.financing_requirements')
+      .select(['id'])
       .where('id', '=', id)
+      .where('is_active', '=', true)
       .executeTakeFirst();
 
     if (!existing) {
@@ -421,9 +171,9 @@ export class FinancingService {
     }
 
     const countRow = await this.db
-      .selectFrom('finance.financing_requirement_template_items')
+      .selectFrom('finance.financing_requirements')
       .select((eb) => eb.fn.countAll<number>().as('total'))
-      .where('template_id', '=', existing.template_id)
+      .where('is_active', '=', true)
       .executeTakeFirstOrThrow();
 
     if (Number(countRow.total) <= 1) {
@@ -431,7 +181,8 @@ export class FinancingService {
     }
 
     await this.db
-      .deleteFrom('finance.financing_requirement_template_items')
+      .updateTable('finance.financing_requirements')
+      .set({ is_active: false, updated_at: new Date() })
       .where('id', '=', id)
       .execute();
 
@@ -453,16 +204,12 @@ export class FinancingService {
           eb('app.application_number', 'ilike', pattern),
           eb('buyer.buyer_name', 'ilike', pattern),
           eb('vehicle.stock_number', 'ilike', pattern),
-          eb('partner.name', 'ilike', pattern),
         ]),
       );
     }
 
     if (query.status && query.status !== 'all') {
       baseQuery = baseQuery.where('app.status', '=', query.status);
-    }
-    if (query.partnerId) {
-      baseQuery = baseQuery.where('app.partner_id', '=', query.partnerId);
     }
     if (query.representativeUserId) {
       baseQuery = baseQuery.where(
@@ -522,26 +269,15 @@ export class FinancingService {
   async createApplication(user: CurrentUser, dto: CreateFinancingApplicationDto) {
     const buyerLead = await this.getBuyerLeadOrThrow(dto.buyerLeadId);
     await this.getVehicleOrThrow(dto.vehicleId);
-    const defaultTemplate = await this.ensureDefaultRequirementTemplate(user.id);
-    const partnerId = normalizeOptionalTrimmed(dto.partnerId) ?? defaultTemplate.partner_id;
-    await this.ensureRepresentativeEligible(partnerId, dto.representativeUserId);
+    await this.ensureRepresentativeRole(dto.representativeUserId);
     const assignedStaffUserId =
       normalizeOptionalTrimmed(dto.assignedStaffUserId) ??
       buyerLead.assignee_user_id ??
       user.id;
     await this.ensureActiveUser(assignedStaffUserId);
-    const templateId =
-      normalizeOptionalTrimmed(dto.templateId) ??
-      (await this.getDefaultTemplateId(partnerId));
 
-    if (!templateId) {
-      throw new BadRequestException(
-        'Add at least one financing requirement before creating an application',
-      );
-    }
-
-    const templateItems = await this.listTemplateItems(templateId);
-    if (!templateItems.length) {
+    const requirements = await this.listActiveFinancingRequirements();
+    if (!requirements.length) {
       throw new BadRequestException(
         'Add at least one financing requirement before creating an application',
       );
@@ -555,12 +291,12 @@ export class FinancingService {
           buyer_lead_id: requireTrimmed(dto.buyerLeadId, 'buyerLeadId'),
           vehicle_id: requireTrimmed(dto.vehicleId, 'vehicleId'),
           assigned_staff_user_id: assignedStaffUserId,
-          partner_id: partnerId,
+          partner_id: null,
           representative_user_id: requireTrimmed(
             dto.representativeUserId,
             'representativeUserId',
           ),
-          template_id: templateId,
+          template_id: null,
           requested_amount: normalizeOptionalTrimmed(dto.requestedAmount),
           down_payment: normalizeOptionalTrimmed(dto.downPayment),
           term_months: dto.termMonths ?? null,
@@ -570,7 +306,7 @@ export class FinancingService {
         .returningAll()
         .executeTakeFirstOrThrow();
 
-      await this.copyTemplateRequirements(app.id, templateId, trx);
+      await this.copyFinancingRequirements(app.id, requirements, trx);
       await this.writeActivity(
         user,
         app.id,
@@ -601,17 +337,13 @@ export class FinancingService {
     this.assertCanAccessApplication(user, app, PERMISSIONS.financingUpdate);
     this.assertNotTerminal(app);
 
-    if (dto.partnerId || dto.representativeUserId) {
-      await this.ensureRepresentativeMembership(
-        dto.partnerId ?? app.partner_id,
-        dto.representativeUserId ?? app.representative_user_id,
-      );
+    if (dto.representativeUserId) {
+      await this.ensureRepresentativeRole(dto.representativeUserId);
     }
 
     const updated = await this.db
       .updateTable('finance.financing_applications')
       .set({
-        ...(dto.partnerId ? { partner_id: dto.partnerId } : {}),
         ...(dto.representativeUserId
           ? { representative_user_id: dto.representativeUserId }
           : {}),
@@ -1131,7 +863,6 @@ export class FinancingService {
       .selectFrom('finance.financing_applications as app')
       .innerJoin('crm.buyer_leads as buyer', 'buyer.id', 'app.buyer_lead_id')
       .innerJoin('inventory.vehicles as vehicle', 'vehicle.id', 'app.vehicle_id')
-      .innerJoin('finance.financing_partners as partner', 'partner.id', 'app.partner_id')
       .innerJoin('authentication.users as rep', 'rep.id', 'app.representative_user_id')
       .innerJoin('authentication.users as staff', 'staff.id', 'app.assigned_staff_user_id');
 
@@ -1364,19 +1095,6 @@ export class FinancingService {
     return vehicle;
   }
 
-  private async ensurePartnerExists(id: string) {
-    const partner = await this.db
-      .selectFrom('finance.financing_partners')
-      .select(['id'])
-      .where('id', '=', id)
-      .where('is_active', '=', true)
-      .executeTakeFirst();
-
-    if (!partner) {
-      throw new BadRequestException('Active financing partner was not found');
-    }
-  }
-
   private async ensureActiveUser(id: string) {
     const user = await this.db
       .selectFrom('authentication.users')
@@ -1390,22 +1108,8 @@ export class FinancingService {
     }
   }
 
-  private async ensureRepresentativeMembership(partnerId: string, userId: string) {
+  private async ensureRepresentativeRole(userId: string) {
     const representative = await this.db
-      .selectFrom('finance.financing_partner_representatives')
-      .select(['id'])
-      .where('partner_id', '=', partnerId)
-      .where('user_id', '=', userId)
-      .where('is_active', '=', true)
-      .executeTakeFirst();
-
-    if (!representative) {
-      throw new BadRequestException('Representative must be active and belong to the selected partner');
-    }
-  }
-
-  private async ensureRepresentativeEligible(partnerId: string, userId: string) {
-    const roleRepresentative = await this.db
       .selectFrom('authentication.users as user')
       .innerJoin('authentication.roles as role', 'role.id', 'user.role_id')
       .select(['user.id'])
@@ -1415,177 +1119,44 @@ export class FinancingService {
       .where('role.archived_at', 'is', null)
       .executeTakeFirst();
 
-    if (roleRepresentative) {
-      return;
+    if (!representative) {
+      throw new BadRequestException(
+        'Representative must be an active user with the Financing Representative role',
+      );
     }
-
-    await this.ensureRepresentativeMembership(partnerId, userId);
   }
 
-  private async getDefaultTemplateId(partnerId: string) {
-    const template = await this.db
-      .selectFrom('finance.financing_requirement_templates')
-      .select(['id'])
-      .where('partner_id', '=', partnerId)
-      .where('is_active', '=', true)
-      .orderBy('is_default', 'desc')
-      .orderBy('created_at', 'desc')
-      .executeTakeFirst();
-
-    return template?.id ?? null;
-  }
-
-  private async ensureDefaultRequirementTemplate(userId?: string) {
-    const existingTemplate = await this.db
-      .selectFrom('finance.financing_requirement_templates as template')
-      .innerJoin('finance.financing_partners as partner', 'partner.id', 'template.partner_id')
-      .selectAll('template')
-      .where('template.is_active', '=', true)
-      .where('partner.is_active', '=', true)
-      .orderBy('template.is_default', 'desc')
-      .orderBy('template.created_at', 'desc')
-      .executeTakeFirst();
-
-    if (existingTemplate) {
-      return existingTemplate;
-    }
-
-    return this.db.transaction().execute(async (trx) => {
-      const partner =
-        (await trx
-          .selectFrom('finance.financing_partners')
-          .selectAll()
-          .where('is_active', '=', true)
-          .orderBy('created_at', 'asc')
-          .executeTakeFirst()) ??
-        (await trx
-          .insertInto('finance.financing_partners')
-          .values({
-            name: 'Default Financing',
-            contact_person: null,
-            contact_number: null,
-            email: null,
-            notes: 'Internal default partner used for financing requirements.',
-            created_by_user_id: userId ?? null,
-            updated_by_user_id: userId ?? null,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow());
-
-      return trx
-        .insertInto('finance.financing_requirement_templates')
-        .values({
-          partner_id: partner.id,
-          name: 'Financing Requirements',
-          description: 'Default buyer upload requirements for financing applications.',
-          is_default: true,
-          created_by_user_id: userId ?? null,
-          updated_by_user_id: userId ?? null,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
-    });
-  }
-
-  private async getTemplateOrThrow(id: string) {
-    const template = await this.db
-      .selectFrom('finance.financing_requirement_templates')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst();
-
-    if (!template) {
-      throw new NotFoundException('Requirement template was not found');
-    }
-
-    return template;
-  }
-
-  private async getTemplateResponse(id: string) {
-    const template = await this.getTemplateOrThrow(id);
-    const items = await this.db
-      .selectFrom('finance.financing_requirement_template_items')
-      .selectAll()
-      .where('template_id', '=', id)
-      .orderBy('sort_order')
-      .execute();
-
-    return mapTemplate(template, items);
-  }
-
-  private async listTemplateItems(templateId: string) {
+  private async listActiveFinancingRequirements() {
     return this.db
-      .selectFrom('finance.financing_requirement_template_items')
+      .selectFrom('finance.financing_requirements')
       .selectAll()
-      .where('template_id', '=', templateId)
+      .where('is_active', '=', true)
       .orderBy('sort_order')
       .orderBy('created_at')
       .execute();
   }
 
-  private async clearDefaultTemplate(partnerId: string, trx: Transaction<DB>) {
-    await trx
-      .updateTable('finance.financing_requirement_templates')
-      .set({ is_default: false, updated_at: new Date() })
-      .where('partner_id', '=', partnerId)
-      .where('is_default', '=', true)
-      .execute();
-  }
-
-  private async replaceTemplateItems(
-    templateId: string,
-    items: { label: string; description?: string | null; isRequired?: boolean; sortOrder?: number }[],
-    trx: Transaction<DB>,
-  ) {
-    await trx
-      .deleteFrom('finance.financing_requirement_template_items')
-      .where('template_id', '=', templateId)
-      .execute();
-
-    if (!items.length) {
-      throw new BadRequestException('At least one template requirement is required');
-    }
-
-    await trx
-      .insertInto('finance.financing_requirement_template_items')
-      .values(
-        items.map((item, index) => ({
-          template_id: templateId,
-          label: requireTrimmed(item.label, 'label'),
-          description: normalizeOptionalTrimmed(item.description),
-          is_required: item.isRequired ?? true,
-          sort_order: item.sortOrder ?? index,
-        })),
-      )
-      .execute();
-  }
-
-  private async copyTemplateRequirements(
+  private async copyFinancingRequirements(
     applicationId: string,
-    templateId: string,
+    requirements: Array<{
+      id: string;
+      label: string;
+      description: string | null;
+      is_required: boolean;
+      sort_order: number;
+    }>,
     trx: Transaction<DB>,
   ) {
-    const items = await trx
-      .selectFrom('finance.financing_requirement_template_items')
-      .selectAll()
-      .where('template_id', '=', templateId)
-      .orderBy('sort_order')
-      .execute();
-
-    if (!items.length) {
-      throw new BadRequestException('Selected template has no requirements');
-    }
-
     await trx
       .insertInto('finance.financing_application_requirements')
       .values(
-        items.map((item) => ({
+        requirements.map((requirement) => ({
           application_id: applicationId,
-          template_item_id: item.id,
-          label: item.label,
-          description: item.description,
-          is_required: item.is_required,
-          sort_order: item.sort_order,
+          template_item_id: null,
+          label: requirement.label,
+          description: requirement.description,
+          is_required: requirement.is_required,
+          sort_order: requirement.sort_order,
         })),
       )
       .execute();
@@ -1864,66 +1435,6 @@ export class FinancingService {
   }
 }
 
-function mapPartner(row: any, representatives: ReturnType<typeof mapRepresentativeDetail>[] = []) {
-  return {
-    id: row.id,
-    name: row.name,
-    contactPerson: row.contact_person,
-    contactNumber: row.contact_number,
-    email: row.email,
-    notes: row.notes,
-    isActive: row.is_active,
-    representatives,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapRepresentative(row: any) {
-  return {
-    id: row.id,
-    partnerId: row.partner_id,
-    userId: row.user_id,
-    isActive: row.is_active,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapRepresentativeDetail(row: any) {
-  return {
-    id: row.id,
-    partnerId: row.partnerId,
-    userId: row.userId,
-    fullName: row.fullName,
-    email: row.email,
-    roleName: row.roleName,
-    isActive: row.isActive,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function mapTemplate(template: any, items: any[]) {
-  return {
-    id: template.id,
-    partnerId: template.partner_id,
-    name: template.name,
-    description: template.description,
-    isDefault: template.is_default,
-    isActive: template.is_active,
-    createdAt: template.created_at,
-    updatedAt: template.updated_at,
-    items: items.map((item) => ({
-      id: item.id,
-      label: item.label,
-      description: item.description,
-      isRequired: item.is_required,
-      sortOrder: item.sort_order,
-    })),
-  };
-}
-
 function mapRequirementSetting(item: any) {
   return {
     id: item.id,
@@ -1959,8 +1470,8 @@ function mapApplicationSummary(row: any, progress: ReturnType<typeof defaultProg
         .join(' '),
     },
     partner: {
-      id: row.partner_id,
-      name: row.partner_name,
+      id: row.partner_id ?? '',
+      name: 'Financing',
     },
     representative: {
       id: row.representative_user_id,

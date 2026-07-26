@@ -461,13 +461,26 @@ export interface FinancingRequirementTemplateItemsTable {
   updated_at: Generated<Date>;
 }
 
+export interface FinancingRequirementsTable {
+  id: Generated<string>;
+  label: string;
+  description: string | null;
+  is_required: Generated<boolean>;
+  is_active: Generated<boolean>;
+  sort_order: Generated<number>;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface FinancingApplicationsTable {
   id: Generated<string>;
   application_number: string;
   buyer_lead_id: string;
   vehicle_id: string;
   assigned_staff_user_id: string;
-  partner_id: string;
+  partner_id: string | null;
   representative_user_id: string;
   template_id: string | null;
   status: Generated<FinancingApplicationStatus>;
@@ -585,6 +598,7 @@ export interface DB {
   'finance.financing_partner_representatives': FinancingPartnerRepresentativesTable;
   'finance.financing_requirement_templates': FinancingRequirementTemplatesTable;
   'finance.financing_requirement_template_items': FinancingRequirementTemplateItemsTable;
+  'finance.financing_requirements': FinancingRequirementsTable;
   'finance.financing_applications': FinancingApplicationsTable;
   'finance.financing_application_requirements': FinancingApplicationRequirementsTable;
   'finance.financing_document_versions': FinancingDocumentVersionsTable;
