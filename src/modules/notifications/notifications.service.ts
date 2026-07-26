@@ -14,6 +14,7 @@ import { DATABASE } from '../../database/database.constants';
 import type { DB } from '../../database/db';
 import type {
   ExpenseNotificationType,
+  FinancingNotificationType,
   FollowUpNotificationType,
   LeadType,
   NotificationType,
@@ -969,7 +970,9 @@ function mapNotification(row: NotificationRow): NotificationResponse {
           ? '/follow-ups'
           : row.entity_type === 'vehicle'
             ? `/vehicles/${row.entity_id}`
-            : null,
+            : row.entity_type === 'financing_application'
+              ? `/financing/${row.entity_id}`
+              : null,
     dueDateSnapshot: row.due_date_snapshot,
     isRead: row.read_at !== null,
     readAt: row.read_at,
@@ -980,19 +983,58 @@ function mapNotification(row: NotificationRow): NotificationResponse {
 }
 
 function parseNotificationType(value: string): NotificationType {
-  if (
-    value === 'expense_due_soon' ||
-    value === 'expense_due_today' ||
-    value === 'expense_overdue' ||
-    value === 'follow_up_due_soon' ||
-    value === 'follow_up_due_today' ||
-    value === 'follow_up_overdue' ||
-    value === 'vehicle_available'
-  ) {
+  if (isNotificationType(value)) {
     return value;
   }
 
   throw new Error(`Unsupported notification type: ${value}`);
+}
+
+function isNotificationType(value: string): value is NotificationType {
+  return (
+    isExpenseNotificationType(value) ||
+    isFollowUpNotificationType(value) ||
+    isVehicleNotificationType(value) ||
+    isFinancingNotificationType(value)
+  );
+}
+
+function isExpenseNotificationType(
+  value: string,
+): value is ExpenseNotificationType {
+  return (
+    value === 'expense_due_soon' ||
+    value === 'expense_due_today' ||
+    value === 'expense_overdue'
+  );
+}
+
+function isFollowUpNotificationType(
+  value: string,
+): value is FollowUpNotificationType {
+  return (
+    value === 'follow_up_due_soon' ||
+    value === 'follow_up_due_today' ||
+    value === 'follow_up_overdue'
+  );
+}
+
+function isVehicleNotificationType(
+  value: string,
+): value is VehicleNotificationType {
+  return value === 'vehicle_available';
+}
+
+function isFinancingNotificationType(
+  value: string,
+): value is FinancingNotificationType {
+  return (
+    value === 'financing_requirements_submitted' ||
+    value === 'financing_revision_requested' ||
+    value === 'financing_approved' ||
+    value === 'financing_rejected' ||
+    value === 'financing_loan_released'
+  );
 }
 
 function truncateText(value: string, maxLength: number) {
